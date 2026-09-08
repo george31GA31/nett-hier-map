@@ -13,6 +13,6 @@
 */
 window.NETT_HIER_CONFIG = {
   supabaseUrl: "https://ukkvukdzmdzpertbjnp.supabase.co",
-  supabasePublishableKey: "sb_publishable_Pp6-YdU3lhgflNrvF7wN1g_cnuBLpvt",
+  supabasePublishableKey: "https://ukkvukdzmdzpertbjjnp.supabase.co",
   photoBucket: "sticker-photos"
 };
