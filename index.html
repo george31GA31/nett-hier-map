@@ -2,30 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffe100" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta
     name="description"
-    content="A world map of Nett hier. Aber waren Sie schon mal in Baden-Württemberg? sticker sightings."
+    content="Plot sightings of Nett hier. Aber waren Sie schon mal in Baden-Württemberg? stickers around the world."
   />
   <title>Nett hier. Sticker Map</title>
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-    integrity="sha256-p4NxAoJBhIINfQ3YWqKjMZpLFrI6VJo0j6R5jMZ8V6U="
-    crossorigin=""
-  />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
-  />
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
-  />
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="styles.css?v=2" />
 </head>
 <body>
   <header class="site-header">
@@ -43,29 +35,31 @@
       </div>
       <button id="addButton" class="primary-button" type="button">
         <span class="plus" aria-hidden="true">+</span>
-        Add a sighting
+        <span class="add-label">Add a sighting</span>
       </button>
     </div>
   </header>
 
   <main class="map-shell">
-    <div id="map" aria-label="World map of sticker sightings"></div>
+    <div id="map" aria-label="Interactive world map of sticker sightings"></div>
 
     <section class="map-intro" id="mapIntro">
       <strong>Seen one?</strong>
-      <span>Zoom in, hit “Add a sighting”, then click the exact spot on the map.</span>
+      <span>Zoom in, tap “Add a sighting”, then tap the exact spot where you found it.</span>
     </section>
 
     <section id="addModeNotice" class="add-mode-notice" hidden>
-      <span>Now click the map where you found the sticker.</span>
+      <span>Tap the map where you found the sticker.</span>
       <button id="cancelAddMode" type="button">Cancel</button>
     </section>
 
-    <div id="modeBadge" class="mode-badge" role="status"></div>
+    <div id="modeBadge" class="mode-badge" role="status" aria-live="polite">
+      Loading sightings…
+    </div>
   </main>
 
   <dialog id="sightingDialog" class="sighting-dialog">
-    <form id="sightingForm" method="dialog">
+    <form id="sightingForm">
       <div class="dialog-header">
         <div>
           <p class="eyebrow">NEW SIGHTING</p>
@@ -78,15 +72,8 @@
 
       <label class="field">
         <span>Photo <b>*</b></span>
-        <input
-          id="photoInput"
-          name="photo"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          required
-        />
-        <small>Take a photo or choose one from your phone.</small>
+        <input id="photoInput" name="photo" type="file" accept="image/*" required />
+        <small>Take a photo or choose one from your phone/tablet.</small>
       </label>
 
       <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
@@ -96,7 +83,14 @@
       <div class="two-col">
         <label class="field">
           <span>Place / city</span>
-          <input id="placeInput" name="place" type="text" maxlength="120" placeholder="e.g. Dublin, Ireland" />
+          <input
+            id="placeInput"
+            name="place"
+            type="text"
+            maxlength="120"
+            autocomplete="off"
+            placeholder="e.g. Dublin, Ireland"
+          />
         </label>
 
         <label class="field">
@@ -125,14 +119,10 @@
     </form>
   </dialog>
 
-  <script
-    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-    crossorigin=""
-  ></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+  <script src="config.js?v=2"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

@@ -1,16 +1,18 @@
 /*
-  GLOBAL MODE
-  -----------
-  Add your Supabase project details here after running supabase.sql.
+  LIVE SHARED MAP SETUP
 
-  It is SAFE for a browser app to contain the Supabase publishable/anon key
-  as long as Row Level Security is enabled (the supplied SQL does this).
+  1) Create a Supabase project.
+  2) Run supabase.sql in its SQL Editor.
+  3) From the Supabase "Connect" dialog, copy:
+       - Project URL
+       - Publishable key (starts with sb_publishable_)
+  4) Paste them below and commit this file to GitHub.
 
-  Leave these blank and the website automatically runs in DEMO MODE:
-  sightings are saved only in this browser on this device.
+  IMPORTANT:
+  Use the PUBLISHABLE key, never a secret/service-role key.
 */
 window.NETT_HIER_CONFIG = {
   supabaseUrl: "",
-  supabaseAnonKey: "",
+  supabasePublishableKey: "",
   photoBucket: "sticker-photos"
 };

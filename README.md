@@ -1,101 +1,51 @@
-# Nett hier. Sticker Map
+# Nett hier. Sticker Map — v2
 
-## Easiest way to open it
+This version fixes the map/page scrolling bug, improves phone/iPad behavior,
+and is ready to be a genuinely shared worldwide map using Supabase.
 
-Double-click:
+## What changed
 
-`Nett Hier Sticker Map - DOUBLE CLICK.html`
+- The web page itself no longer scrolls underneath the map.
+- The map is locked to the real world bounds, so there are no endless repeated worlds.
+- Better map resizing after phone/iPad rotation and browser bar resizing.
+- Responsive bottom-sheet style upload form on phones.
+- 16px mobile inputs to stop iPhone/iPad Safari zooming into forms.
+- Photos are compressed before upload.
+- Live Supabase database + Storage support.
+- Realtime INSERT subscription: a new sighting can appear on other open devices immediately.
+- Sticker artwork is kept in the repository root, so GitHub web upload cannot break its path.
 
-That version has the website design, code and sticker artwork bundled into one
-file, so you do **not** need Terminal or a local web server. You still need an
-internet connection for the world map tiles.
+## Put this version on GitHub
 
-A deliberately simple public world map for sightings of the
-“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?” sticker.
+Replace the old versions in the repo with:
 
-## What already works
+- `index.html`
+- `styles.css`
+- `app.js`
+- `config.js`
+- `supabase.sql`
+- `favicon.svg`
+- `nett-hier-sticker.webp`
 
-- World map with pan + zoom
-- “Add a sighting” mode
-- Click/tap the exact location
-- Photo upload / phone camera
-- Optional city/place and note
-- Date spotted
-- Yellow custom map pins
-- Marker clustering when lots of sightings are close together
-- Photo popups
-- Mobile layout
-- Automatic image resizing/compression
-- Shared global database + photo storage when Supabase is connected
-- Local demo mode when Supabase is not connected
+GitHub Pages can keep deploying from `main` and `/ (root)`.
 
-## 1. Preview it immediately
-
-The site can be previewed before you connect a database.
-
-Recommended:
-
-1. Open a terminal in this folder.
-2. Run:
-   `python -m http.server 8000`
-3. Visit:
-   `http://localhost:8000`
-
-Without Supabase, the banner says **Demo mode**. New sightings are saved only in
-that browser on that device.
-
-## 2. Make it a real shared worldwide map
-
-This build uses Supabase for the database and uploaded photos.
+## Make it worldwide instead of demo mode
 
 1. Create a Supabase project.
-2. Open its **SQL Editor**.
-3. Paste and run all of `supabase.sql`.
-4. In Supabase, copy your **Project URL** and **publishable/anon key**.
-5. Open `config.js` and fill in:
+2. Open **SQL Editor**.
+3. Paste the complete contents of `supabase.sql`.
+4. Run it.
+5. Open the Supabase **Connect** dialog.
+6. Copy:
+   - Project URL
+   - Publishable key (`sb_publishable_...`)
+7. Edit `config.js` in GitHub and paste those two values.
+8. Commit the change.
 
-```js
-window.NETT_HIER_CONFIG = {
-  supabaseUrl: "https://YOUR-PROJECT.supabase.co",
-  supabaseAnonKey: "YOUR-PUBLISHABLE-OR-ANON-KEY",
-  photoBucket: "sticker-photos"
-};
-```
+When the live page reloads, the bottom-right message should say:
 
-Reload the site. The bottom-right badge will change to **Live shared map**.
+`Live · shared worldwide`
 
-The browser key is designed to be public. Security comes from Supabase Row
-Level Security; the supplied SQL allows public viewing and adding, but not
-editing/deleting existing sightings.
-
-## 3. Put it online
-
-This is a static site, so after Supabase is connected you can deploy the folder
-to any normal static host, including Netlify, Vercel, Cloudflare Pages or
-GitHub Pages.
-
-There is no separate server process to maintain.
-
-## Files
-
-- `index.html` — page structure
-- `styles.css` — design
-- `app.js` — map, marker, photo and saving logic
-- `config.js` — Supabase connection details
-- `supabase.sql` — database/storage setup
-- `assets/nett-hier-sticker.webp` — supplied sticker artwork, resized for web
-- `favicon.svg` — simple site icon
-
-## Before a big public launch
-
-The current MVP intentionally lets anyone submit a pin, because that is the
-core idea. For a busy public site, the next useful additions would be:
-
-- moderation / approve-before-publish
-- CAPTCHA or rate limiting
-- an admin delete/review screen
-- duplicate reporting
-- automatic place naming from coordinates
-- shareable links to individual sightings
-
-Those can be added without changing the basic map design.
+Do NOT put a Supabase secret/service-role key in `config.js`.
+The publishable key is the correct browser key; access is controlled by the
+Row Level Security policies in `supabase.sql`.

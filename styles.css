@@ -1,13 +1,14 @@
 :root {
   --yellow: #ffe100;
-  --yellow-deep: #f1cf00;
+  --yellow-deep: #efd100;
   --ink: #171717;
-  --muted: #686868;
+  --muted: #66645f;
   --paper: #ffffff;
-  --line: #dedede;
-  --green: #16844b;
+  --line: #dad9d4;
+  --green: #147a46;
   --danger: #b42318;
   --shadow: 0 18px 55px rgba(0, 0, 0, 0.16);
+  --header-h: 88px;
 }
 
 * {
@@ -16,11 +17,21 @@
 
 html,
 body {
+  width: 100%;
+  height: 100%;
   margin: 0;
-  min-height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
   color: var(--ink);
-  background: #f5f4ef;
+  background: #dce7e7;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
 }
 
 button,
@@ -31,38 +42,46 @@ textarea {
 
 button {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .site-header {
-  min-height: 92px;
+  flex: 0 0 auto;
+  min-height: var(--header-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 12px 24px;
+  gap: 20px;
+  padding:
+    calc(10px + env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right))
+    10px
+    max(20px, env(safe-area-inset-left));
   background: var(--paper);
-  border-bottom: 1px solid #ececec;
+  border-bottom: 1px solid #ecebea;
   position: relative;
-  z-index: 500;
+  z-index: 1000;
 }
 
 .brand {
   display: block;
-  width: min(280px, 43vw);
+  width: min(285px, 44vw);
+  min-width: 0;
 }
 
 .brand img {
   display: block;
   width: 100%;
-  height: 66px;
+  height: 64px;
   object-fit: contain;
   object-position: left center;
 }
 
 .header-actions {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
 }
 
 .spot-count {
@@ -74,13 +93,13 @@ button {
 }
 
 .spot-count strong {
-  font-size: 24px;
+  font-size: 23px;
 }
 
 .spot-count span {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -90,7 +109,7 @@ button {
 .icon-button {
   border: 0;
   border-radius: 999px;
-  min-height: 44px;
+  min-height: 46px;
   font-weight: 800;
 }
 
@@ -102,11 +121,19 @@ button {
   padding: 0 18px;
   color: var(--ink);
   background: var(--yellow);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,.06);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06);
 }
 
 .primary-button:hover {
   background: var(--yellow-deep);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.icon-button:focus-visible,
+.add-mode-notice button:focus-visible {
+  outline: 3px solid rgba(23, 23, 23, .32);
+  outline-offset: 2px;
 }
 
 .primary-button:disabled {
@@ -116,7 +143,7 @@ button {
 
 .secondary-button {
   padding: 0 18px;
-  background: #f0f0ee;
+  background: #efefec;
   color: var(--ink);
 }
 
@@ -128,36 +155,58 @@ button {
 
 .map-shell {
   position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: #dce7e7;
 }
 
 #map {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: calc(100vh - 92px);
-  min-height: 560px;
+  height: 100%;
   background: #dce7e7;
   cursor: grab;
+  touch-action: none;
 }
 
 .map-shell.adding #map {
   cursor: crosshair;
 }
 
+.leaflet-container {
+  font-family: inherit;
+}
+
+.leaflet-control-zoom a {
+  width: 42px;
+  height: 42px;
+  line-height: 42px;
+  font-size: 22px;
+}
+
+.leaflet-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
 .map-intro,
 .add-mode-notice,
 .mode-badge {
   position: absolute;
-  z-index: 450;
+  z-index: 800;
 }
 
 .map-intro {
-  top: 18px;
-  left: 18px;
-  width: min(390px, calc(100% - 36px));
-  padding: 14px 16px;
+  top: 16px;
+  left: 16px;
+  width: min(390px, calc(100% - 32px));
+  padding: 13px 15px;
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
   backdrop-filter: blur(10px);
+  pointer-events: none;
 }
 
 .map-intro strong,
@@ -177,20 +226,20 @@ button {
 }
 
 .add-mode-notice {
-  top: 18px;
+  top: 16px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 12px;
   width: max-content;
-  max-width: calc(100% - 36px);
-  padding: 10px 12px 10px 16px;
+  max-width: calc(100% - 32px);
+  padding: 9px 10px 9px 15px;
   border: 2px solid var(--ink);
   border-radius: 999px;
   background: var(--yellow);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 850;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
 }
 
@@ -199,34 +248,47 @@ button {
 }
 
 .add-mode-notice button {
-  min-height: 34px;
+  min-height: 36px;
   padding: 0 13px;
   border: 0;
   border-radius: 999px;
   background: var(--ink);
   color: white;
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .mode-badge {
-  right: 18px;
-  bottom: 24px;
-  max-width: min(420px, calc(100% - 36px));
+  right: 14px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  max-width: min(430px, calc(100% - 28px));
   padding: 8px 12px;
   border-radius: 999px;
   color: #4f4f4f;
-  background: rgba(255,255,255,.94);
+  background: rgba(255,255,255,.95);
   box-shadow: 0 6px 24px rgba(0,0,0,.11);
   font-size: 12px;
+  pointer-events: none;
+}
+
+.mode-badge.live::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  vertical-align: 1px;
 }
 
 .sighting-dialog {
   width: min(610px, calc(100% - 28px));
-  max-height: calc(100% - 28px);
+  max-height: min(720px, calc(100% - 28px));
   padding: 0;
   border: 0;
   border-radius: 22px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--paper);
   box-shadow: var(--shadow);
 }
@@ -257,14 +319,15 @@ button {
 
 .eyebrow {
   margin: 0 0 7px;
-  color: #7a6a00;
+  color: #786800;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.14em;
 }
 
 .icon-button {
-  width: 44px;
+  flex: 0 0 46px;
+  width: 46px;
   padding: 0;
   background: #f2f2ef;
   color: var(--ink);
@@ -301,17 +364,22 @@ button {
 .field input,
 .field textarea {
   width: 100%;
-  min-height: 46px;
+  min-height: 48px;
   border: 1px solid #d4d4d0;
   border-radius: 12px;
   outline: none;
   padding: 11px 12px;
   color: var(--ink);
   background: #fff;
+  font-size: 16px; /* prevents iOS auto-zoom */
+}
+
+.field input[type="file"] {
+  padding: 10px;
 }
 
 .field textarea {
-  min-height: 90px;
+  min-height: 92px;
   resize: vertical;
 }
 
@@ -369,15 +437,14 @@ button {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 10px;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .nett-marker {
   display: grid;
   place-items: center;
-  width: 30px !important;
-  height: 30px !important;
-  margin-left: -15px !important;
-  margin-top: -15px !important;
+  width: 31px !important;
+  height: 31px !important;
   border: 3px solid var(--ink);
   border-radius: 50% 50% 50% 10%;
   transform: rotate(-45deg);
@@ -393,7 +460,7 @@ button {
 .marker-cluster-small,
 .marker-cluster-medium,
 .marker-cluster-large {
-  background: rgba(255, 225, 0, .32);
+  background: rgba(255, 225, 0, .34);
 }
 
 .marker-cluster-small div,
@@ -405,15 +472,15 @@ button {
 }
 
 .popup-card {
-  width: 220px;
+  width: min(230px, 62vw);
 }
 
 .popup-card img {
   display: block;
   width: 100%;
-  max-height: 190px;
+  max-height: 210px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: 9px;
   margin-bottom: 9px;
   background: #eee;
 }
@@ -446,19 +513,31 @@ button {
   border-radius: 14px;
 }
 
-@media (max-width: 680px) {
+.leaflet-control-attribution {
+  max-width: min(75vw, 500px);
+  white-space: normal;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 74px;
+  }
+
   .site-header {
-    min-height: 78px;
-    padding: 8px 10px;
-    gap: 10px;
+    gap: 8px;
+    padding:
+      calc(6px + env(safe-area-inset-top))
+      max(10px, env(safe-area-inset-right))
+      6px
+      max(10px, env(safe-area-inset-left));
   }
 
   .brand {
-    width: 175px;
+    width: min(190px, 51vw);
   }
 
   .brand img {
-    height: 58px;
+    height: 56px;
   }
 
   .spot-count {
@@ -466,39 +545,58 @@ button {
   }
 
   .header-actions {
-    gap: 8px;
+    gap: 6px;
   }
 
   .primary-button {
+    min-height: 46px;
     padding: 0 13px;
     font-size: 13px;
-  }
-
-  #map {
-    height: calc(100vh - 78px);
-    min-height: 520px;
   }
 
   .map-intro {
     top: 10px;
     left: 10px;
-    width: calc(100% - 20px);
+    width: min(330px, calc(100% - 20px));
+    padding: 10px 12px;
+  }
+
+  .map-intro span {
+    font-size: 12px;
   }
 
   .add-mode-notice {
     top: 10px;
     max-width: calc(100% - 20px);
-    border-radius: 14px;
+    border-radius: 15px;
+    line-height: 1.25;
   }
 
   .mode-badge {
     right: 10px;
-    bottom: 18px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
     max-width: calc(100% - 20px);
   }
 
+  .leaflet-control-zoom {
+    margin-left: 10px !important;
+    margin-top: 82px !important;
+  }
+
+  .sighting-dialog {
+    width: 100%;
+    max-width: none;
+    max-height: 88dvh;
+    margin: auto 0 0;
+    border-radius: 22px 22px 0 0;
+  }
+
   .sighting-dialog form {
-    padding: 19px;
+    padding:
+      20px
+      max(16px, env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
   }
 
   .dialog-header h1 {
@@ -512,6 +610,57 @@ button {
 
   .dialog-actions {
     display: grid;
-    grid-template-columns: 1fr 1.35fr;
+    grid-template-columns: 1fr 1.45fr;
+    position: sticky;
+    bottom: 0;
+    margin: 14px -4px -4px;
+    padding: 10px 4px 4px;
+    background: rgba(255,255,255,.96);
+  }
+
+  .dialog-actions button {
+    min-height: 50px;
+  }
+}
+
+@media (max-width: 420px) {
+  .brand {
+    width: 155px;
+  }
+
+  .brand img {
+    height: 50px;
+  }
+
+  .add-label {
+    max-width: 82px;
+    line-height: 1.1;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  :root {
+    --header-h: 62px;
+  }
+
+  .site-header {
+    padding-top: max(4px, env(safe-area-inset-top));
+    padding-bottom: 4px;
+  }
+
+  .brand img {
+    height: 48px;
+  }
+
+  .map-intro {
+    display: none;
+  }
+
+  .leaflet-control-zoom {
+    margin-top: 10px !important;
+  }
+
+  .sighting-dialog {
+    max-height: 96dvh;
   }
 }

@@ -2,22 +2,33 @@
   "use strict";
 
   const config = window.NETT_HIER_CONFIG || {};
+  const publishableKey =
+    String(config.supabasePublishableKey || config.supabaseAnonKey || "").trim();
+
   const globalMode =
-    Boolean(config.supabaseUrl) &&
-    Boolean(config.supabaseAnonKey) &&
+    Boolean(String(config.supabaseUrl || "").trim()) &&
+    Boolean(publishableKey) &&
     !String(config.supabaseUrl).includes("YOUR_") &&
-    !String(config.supabaseAnonKey).includes("YOUR_");
+    !publishableKey.includes("YOUR_");
 
   const db =
     globalMode && window.supabase
-      ? window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey)
+      ? window.supabase.createClient(config.supabaseUrl, publishableKey, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+            detectSessionInUrl: false
+          }
+        })
       : null;
 
   const state = {
     adding: false,
     selectedLatLng: null,
     spots: [],
-    previewUrl: null
+    spotIds: new Set(),
+    previewUrl: null,
+    realtimeChannel: null
   };
 
   const els = {
@@ -43,31 +54,76 @@
     submitButton: document.getElementById("submitButton")
   };
 
-  const map = L.map("map", {
-    worldCopyJump: true,
-    minZoom: 2,
-    zoomControl: true
-  }).setView([23, 8], 2);
+  if (!window.L) {
+    els.modeBadge.textContent = "Map library failed to load — refresh the page";
+    els.addButton.disabled = true;
+    return;
+  }
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const WORLD_BOUNDS = L.latLngBounds(
+    L.latLng(-85.0511, -180),
+    L.latLng(85.0511, 180)
+  );
+
+  const map = L.map("map", {
+    minZoom: 2,
     maxZoom: 19,
+    zoomControl: true,
+    worldCopyJump: false,
+    maxBounds: WORLD_BOUNDS,
+    maxBoundsViscosity: 0.9,
+    bounceAtZoomLimits: false
+  }).setView([22, 7], 2);
+
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    minZoom: 2,
+    maxZoom: 19,
+    noWrap: true,
+    bounds: WORLD_BOUNDS,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    keepBuffer: 2,
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
+
+  tiles.on("tileerror", () => {
+    if (!els.modeBadge.classList.contains("live")) {
+      els.modeBadge.textContent = "Some map tiles are slow to load — your sightings are still safe";
+    }
+  });
 
   const markerLayer = L.markerClusterGroup({
     showCoverageOnHover: false,
     maxClusterRadius: 45,
-    spiderfyOnMaxZoom: true
+    spiderfyOnMaxZoom: true,
+    removeOutsideVisibleBounds: true
   });
   map.addLayer(markerLayer);
 
   const markerIcon = L.divIcon({
     className: "",
     html: '<div class="nett-marker"><span>N</span></div>',
-    iconSize: [30, 30],
-    iconAnchor: [15, 29],
-    popupAnchor: [0, -28]
+    iconSize: [31, 31],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -29]
   });
+
+  const resizeMap = () => {
+    window.requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+  };
+
+  window.addEventListener("resize", resizeMap, { passive: true });
+  window.addEventListener("orientationchange", () => setTimeout(resizeMap, 180), {
+    passive: true
+  });
+
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(resizeMap);
+    observer.observe(document.querySelector(".map-shell"));
+  }
+
+  setTimeout(resizeMap, 50);
+  setTimeout(resizeMap, 350);
 
   function localDateValue() {
     const d = new Date();
@@ -79,9 +135,16 @@
 
   els.dateInput.value = localDateValue();
 
-  els.modeBadge.textContent = globalMode
-    ? "Live shared map"
-    : "Demo mode · sightings save only on this device";
+  function setStatus(text, live = false) {
+    els.modeBadge.textContent = text;
+    els.modeBadge.classList.toggle("live", live);
+  }
+
+  if (globalMode) {
+    setStatus("Connecting to shared map…");
+  } else {
+    setStatus("Demo mode · connect Supabase to share sightings worldwide");
+  }
 
   function setAdding(on) {
     state.adding = Boolean(on);
@@ -104,7 +167,7 @@
   function openDialog() {
     const { lat, lng } = state.selectedLatLng;
     els.coordinateText.textContent =
-      `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)} · drag/zoom the map first if you need a more exact spot.`;
+      `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
 
     els.formMessage.textContent = "";
     els.formMessage.classList.remove("success");
@@ -123,6 +186,7 @@
       URL.revokeObjectURL(state.previewUrl);
       state.previewUrl = null;
     }
+
     els.photoPreviewWrap.hidden = true;
     els.photoPreview.removeAttribute("src");
     els.form.reset();
@@ -145,6 +209,7 @@
 
   els.photoInput.addEventListener("change", () => {
     const file = els.photoInput.files && els.photoInput.files[0];
+
     if (!file) {
       els.photoPreviewWrap.hidden = true;
       return;
@@ -157,13 +222,14 @@
     }
 
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
+
     state.previewUrl = URL.createObjectURL(file);
     els.photoPreview.src = state.previewUrl;
     els.photoPreviewWrap.hidden = false;
     els.formMessage.textContent = "";
   });
 
-  async function imageToBlob(file, maxDimension, quality) {
+  async function imageToBlob(file, maxDimension = 1800, quality = 0.82) {
     const image = await loadImage(file);
     const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
     const width = Math.max(1, Math.round(image.width * scale));
@@ -173,7 +239,9 @@
     canvas.width = width;
     canvas.height = height;
 
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
     ctx.drawImage(image, 0, 0, width, height);
 
     return await new Promise((resolve, reject) => {
@@ -189,14 +257,17 @@
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const image = new Image();
+
       image.onload = () => {
         URL.revokeObjectURL(url);
         resolve(image);
       };
+
       image.onerror = () => {
         URL.revokeObjectURL(url);
         reject(new Error("Could not read that image."));
       };
+
       image.src = url;
     });
   }
@@ -234,18 +305,20 @@
     }
 
     const file = els.photoInput.files && els.photoInput.files[0];
+
     if (!file) {
       els.formMessage.textContent = "A photo is required.";
       return;
     }
 
-    if (file.size > 20 * 1024 * 1024) {
-      els.formMessage.textContent = "That image is too large. Please choose one under 20 MB.";
+    if (file.size > 25 * 1024 * 1024) {
+      els.formMessage.textContent = "That image is too large. Please choose one under 25 MB.";
       return;
     }
 
     const lat = Number(state.selectedLatLng.lat);
     const lng = Number(state.selectedLatLng.lng);
+
     if (!validateLatLng(lat, lng)) {
       els.formMessage.textContent = "That map position is invalid. Please pick the spot again.";
       return;
@@ -260,25 +333,30 @@
     els.formMessage.textContent = "";
 
     try {
-      let imageUrl;
       let newSpot;
 
       if (globalMode) {
-        const compressed = await imageToBlob(file, 1600, 0.84);
-        const fileName = `${crypto.randomUUID()}.jpg`;
+        const compressed = await imageToBlob(file);
+
+        if (compressed.size > 6 * 1024 * 1024) {
+          throw new Error("The compressed photo is still too large. Please choose a smaller image.");
+        }
+
         const bucket = config.photoBucket || "sticker-photos";
+        const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
 
         const uploadResult = await db.storage
           .from(bucket)
           .upload(fileName, compressed, {
             contentType: "image/jpeg",
+            cacheControl: "31536000",
             upsert: false
           });
 
         if (uploadResult.error) throw uploadResult.error;
 
         const publicUrlResult = db.storage.from(bucket).getPublicUrl(fileName);
-        imageUrl = publicUrlResult.data.publicUrl;
+        const imageUrl = publicUrlResult.data.publicUrl;
 
         const row = {
           lat,
@@ -296,14 +374,15 @@
           .single();
 
         if (insertResult.error) {
-          await db.storage.from(bucket).remove([fileName]);
+          await db.storage.from(bucket).remove([fileName]).catch(() => {});
           throw insertResult.error;
         }
 
         newSpot = insertResult.data;
       } else {
-        const compressed = await imageToBlob(file, 950, 0.72);
-        imageUrl = await blobToDataUrl(compressed);
+        const compressed = await imageToBlob(file, 1000, 0.72);
+        const imageUrl = await blobToDataUrl(compressed);
+
         newSpot = {
           id: crypto.randomUUID(),
           lat,
@@ -319,24 +398,23 @@
         current.unshift(newSpot);
 
         try {
-          localStorage.setItem("nett-hier-spots-v1", JSON.stringify(current));
-        } catch (err) {
+          localStorage.setItem("nett-hier-spots-v2", JSON.stringify(current));
+        } catch {
           throw new Error(
-            "This browser has run out of demo storage. Connect Supabase for proper photo storage."
+            "This browser has run out of demo storage. Connect Supabase for shared photo storage."
           );
         }
       }
 
-      state.spots.unshift(newSpot);
-      addMarker(newSpot);
-      updateCount();
-      els.formMessage.textContent = "Added!";
+      addSpotIfNew(newSpot);
+      els.formMessage.textContent = globalMode ? "Added — it is live worldwide!" : "Added to this device.";
       els.formMessage.classList.add("success");
 
-      const savedLatLng = [newSpot.lat, newSpot.lng];
+      const savedLatLng = [Number(newSpot.lat), Number(newSpot.lng)];
+
       setTimeout(() => {
         closeDialog();
-        map.setView(savedLatLng, Math.max(map.getZoom(), 10), { animate: true });
+        map.setView(savedLatLng, Math.max(map.getZoom(), 11), { animate: true });
       }, 450);
     } catch (error) {
       console.error(error);
@@ -352,7 +430,7 @@
 
   function readLocalSpots() {
     try {
-      const parsed = JSON.parse(localStorage.getItem("nett-hier-spots-v1") || "[]");
+      const parsed = JSON.parse(localStorage.getItem("nett-hier-spots-v2") || "[]");
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
@@ -388,33 +466,86 @@
   }
 
   function formatDate(value) {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "Date not supplied";
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return "Date not supplied";
+    }
+
     const [year, month, day] = value.split("-").map(Number);
+
     return new Intl.DateTimeFormat(undefined, {
       day: "numeric",
       month: "short",
-      year: "numeric"
+      year: "numeric",
+      timeZone: "UTC"
     }).format(new Date(Date.UTC(year, month - 1, day)));
   }
 
   function addMarker(spot) {
-    const marker = L.marker([spot.lat, spot.lng], { icon: markerIcon });
-    marker.bindPopup(buildPopup(spot), { maxWidth: 240 });
+    const lat = Number(spot.lat);
+    const lng = Number(spot.lng);
+
+    if (!validateLatLng(lat, lng) || !spot.image_url) return;
+
+    const marker = L.marker([lat, lng], { icon: markerIcon });
+    marker.bindPopup(buildPopup(spot), {
+      maxWidth: 250,
+      autoPanPadding: [24, 24]
+    });
     markerLayer.addLayer(marker);
   }
 
-  function renderSpots() {
+  function addSpotIfNew(spot) {
+    const id = String(spot && spot.id ? spot.id : "");
+    if (!id || state.spotIds.has(id)) return false;
+
+    state.spotIds.add(id);
+    state.spots.push(spot);
+    addMarker(spot);
+    updateCount();
+    return true;
+  }
+
+  function renderSpots(spots) {
     markerLayer.clearLayers();
-    for (const spot of state.spots) {
-      if (validateLatLng(Number(spot.lat), Number(spot.lng)) && spot.image_url) {
-        addMarker(spot);
-      }
+    state.spots = [];
+    state.spotIds.clear();
+
+    for (const spot of spots) {
+      addSpotIfNew(spot);
     }
+
     updateCount();
   }
 
   function updateCount() {
     els.spotCount.textContent = String(state.spots.length);
+  }
+
+  function subscribeToLiveSpots() {
+    if (!globalMode) return;
+
+    state.realtimeChannel = db
+      .channel("nett-hier-live-spots")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "spots"
+        },
+        (payload) => {
+          if (payload && payload.new) {
+            addSpotIfNew(payload.new);
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setStatus("Live · shared worldwide", true);
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setStatus("Shared map connected · live updates delayed", true);
+        }
+      });
   }
 
   async function loadSpots() {
@@ -424,21 +555,30 @@
           .from("spots")
           .select("id, lat, lng, place, note, spotted_on, image_url, created_at")
           .order("created_at", { ascending: false })
-          .limit(5000);
+          .limit(10000);
 
         if (result.error) throw result.error;
-        state.spots = result.data || [];
+
+        renderSpots(result.data || []);
+        setStatus("Live · shared worldwide", true);
+        subscribeToLiveSpots();
       } else {
-        state.spots = readLocalSpots();
+        renderSpots(readLocalSpots());
       }
-      renderSpots();
     } catch (error) {
       console.error(error);
-      els.modeBadge.textContent = globalMode
-        ? "Could not load live sightings — check Supabase setup"
-        : els.modeBadge.textContent;
+
+      if (globalMode) {
+        setStatus("Could not connect to shared map — check Supabase setup");
+      }
     }
   }
+
+  window.addEventListener("pagehide", () => {
+    if (db && state.realtimeChannel) {
+      db.removeChannel(state.realtimeChannel);
+    }
+  });
 
   loadSpots();
 })();
