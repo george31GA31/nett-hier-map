@@ -12,7 +12,7 @@
   Use the PUBLISHABLE key, never a secret/service-role key.
 */
 window.NETT_HIER_CONFIG = {
-  supabaseUrl: "",
-  supabasePublishableKey: "",
+  supabaseUrl: "https://ukkvukdzmdzpertbjnp.supabase.co",
+  supabasePublishableKey: "sb_publishable_Pp6-YdU3lhgflNrvF7wN1g_cnuBLpvt",
   photoBucket: "sticker-photos"
 };
