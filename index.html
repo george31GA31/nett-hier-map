@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffe100" />
+  <meta
+    name="description"
+    content="A world map of Nett hier. Aber waren Sie schon mal in Baden-Württemberg? sticker sightings."
+  />
+  <title>Nett hier. Sticker Map</title>
+
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQ3YWqKjMZpLFrI6VJo0j6R5jMZ8V6U="
+    crossorigin=""
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Nett hier sticker map home">
+      <img
+        src="assets/nett-hier-sticker.webp"
+        alt="Nett hier. Aber waren Sie schon mal in Baden-Württemberg?"
+      />
+    </a>
+
+    <div class="header-actions">
+      <div class="spot-count" aria-live="polite">
+        <strong id="spotCount">0</strong>
+        <span>sightings</span>
+      </div>
+      <button id="addButton" class="primary-button" type="button">
+        <span class="plus" aria-hidden="true">+</span>
+        Add a sighting
+      </button>
+    </div>
+  </header>
+
+  <main class="map-shell">
+    <div id="map" aria-label="World map of sticker sightings"></div>
+
+    <section class="map-intro" id="mapIntro">
+      <strong>Seen one?</strong>
+      <span>Zoom in, hit “Add a sighting”, then click the exact spot on the map.</span>
+    </section>
+
+    <section id="addModeNotice" class="add-mode-notice" hidden>
+      <span>Now click the map where you found the sticker.</span>
+      <button id="cancelAddMode" type="button">Cancel</button>
+    </section>
+
+    <div id="modeBadge" class="mode-badge" role="status"></div>
+  </main>
+
+  <dialog id="sightingDialog" class="sighting-dialog">
+    <form id="sightingForm" method="dialog">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">NEW SIGHTING</p>
+          <h1>Add this sticker</h1>
+        </div>
+        <button class="icon-button" id="closeDialog" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="coordinates" id="coordinateText"></div>
+
+      <label class="field">
+        <span>Photo <b>*</b></span>
+        <input
+          id="photoInput"
+          name="photo"
+          type="file"
+          accept="image/*"
+          capture="environment"
+          required
+        />
+        <small>Take a photo or choose one from your phone.</small>
+      </label>
+
+      <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
+        <img id="photoPreview" alt="Photo preview" />
+      </div>
+
+      <div class="two-col">
+        <label class="field">
+          <span>Place / city</span>
+          <input id="placeInput" name="place" type="text" maxlength="120" placeholder="e.g. Dublin, Ireland" />
+        </label>
+
+        <label class="field">
+          <span>Date spotted</span>
+          <input id="dateInput" name="spotted_on" type="date" required />
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Note</span>
+        <textarea
+          id="noteInput"
+          name="note"
+          maxlength="500"
+          rows="3"
+          placeholder="Optional — lamp post, hostel bathroom, mountain hut…"
+        ></textarea>
+      </label>
+
+      <p id="formMessage" class="form-message" aria-live="polite"></p>
+
+      <div class="dialog-actions">
+        <button id="cancelDialog" class="secondary-button" type="button">Cancel</button>
+        <button id="submitButton" class="primary-button" type="submit">Add to the map</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
