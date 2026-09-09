@@ -68,3 +68,30 @@ button,input,textarea{font:inherit} button{cursor:pointer;-webkit-tap-highlight-
   .sighting-dialog{width:100%;max-width:none;max-height:88dvh;margin:auto 0 0;border-radius:22px 22px 0 0}.sighting-dialog form{padding:20px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}.dialog-header h1{font-size:29px}.dialog-actions{display:grid;grid-template-columns:1fr 1.45fr;position:sticky;bottom:0;margin:14px -4px -4px;padding:10px 4px 4px;background:rgba(255,255,255,.96)}.dialog-actions button{min-height:50px}
 }
 @media (max-width:410px){.brand{width:138px}.brand img{height:46px}.add-label{max-width:82px;line-height:1.05}.page-heading h1{font-size:38px}}
+
+
+.sticker-examples {
+  display: grid;
+  gap: 12px;
+}
+
+.sticker-examples figure {
+  margin: 0;
+}
+
+.sticker-examples img {
+  display: block;
+  width: 100%;
+  border-radius: 18px;
+  background: #fff;
+}
+
+.sticker-examples figcaption {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}

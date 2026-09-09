@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
   <header class="site-header">
@@ -118,17 +118,29 @@
         </div>
 
         <article class="sticker-guide-card">
-          <img src="nett-hier-sticker.webp" alt="Yellow Nett hier sticker" />
+          <div class="sticker-examples">
+            <figure>
+              <img src="nett-hier-sticker.webp" alt="German yellow Nett hier sticker" />
+              <figcaption>German original</figcaption>
+            </figure>
+            <figure>
+              <img src="nett-hier-english.webp" alt="English yellow Not bad sticker" />
+              <figcaption>English version</figcaption>
+            </figure>
+          </div>
           <div>
             <span class="accepted-pill">Accepted</span>
-            <h2>Nett hier.</h2>
+            <h2>Which stickers count?</h2>
             <p>
-              For now, plot sightings of the yellow
-              “Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”
-              sticker shown here.
+              Only the <strong>yellow oval sticker in this same format</strong> is accepted:
+              either the German original reading
+              <strong>“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”</strong>
+              or the English translation
+              <strong>“Not bad. But have you ever been to Baden-Württemberg?”</strong>.
             </p>
             <p class="muted-copy">
-              More recognised sticker designs and clearer rules can be added here later.
+              Other colours, shapes, redesigns, parodies or unrelated Baden-Württemberg stickers
+              should not be plotted.
             </p>
           </div>
         </article>
@@ -217,7 +229,7 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=4"></script>
-  <script src="app.js?v=4"></script>
+  <script src="config.js?v=5"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Nett hier. Sticker Map — V4
+# Nett hier. Sticker Map — V5
 
 ## New
 - Every new sighting asks for **Added by**.
@@ -31,3 +31,12 @@ enabled through the edit form.
 
 A later version can restrict editing to an admin account or to the person who
 created the sighting.
+
+
+## V5 sticker rule
+The Stickers tab now makes the rule explicit: only the yellow oval design in
+the standard format counts, either with the German wording
+“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?” or the matching
+English translation “Not bad. But have you ever been to Baden-Württemberg?”.
+
+The supplied English example is included as `nett-hier-english.webp`.
