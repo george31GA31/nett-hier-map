@@ -2,300 +2,160 @@
   "use strict";
 
   const config = window.NETT_HIER_CONFIG || {};
-  const publishableKey =
-    String(config.supabasePublishableKey || config.supabaseAnonKey || "").trim();
-
-  const globalMode =
-    Boolean(String(config.supabaseUrl || "").trim()) &&
-    Boolean(publishableKey) &&
-    !String(config.supabaseUrl).includes("YOUR_") &&
-    !publishableKey.includes("YOUR_");
-
-  const db =
-    globalMode && window.supabase
-      ? window.supabase.createClient(config.supabaseUrl, publishableKey, {
-          auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
-          }
-        })
-      : null;
+  const key = String(config.supabasePublishableKey || config.supabaseAnonKey || "").trim();
+  const live = Boolean(config.supabaseUrl && key && window.supabase);
+  const db = live ? window.supabase.createClient(config.supabaseUrl, key, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  }) : null;
 
   const state = {
+    mode: "add",
+    editingId: null,
     adding: false,
     selectedLatLng: null,
     location: null,
     locationLookupPromise: null,
     spots: [],
-    spotIds: new Set(),
     previewUrl: null,
     realtimeChannel: null,
-    activeView: "map",
     geocodeCache: new Map()
   };
 
+  const $ = (id) => document.getElementById(id);
   const els = {
-    brandHome: document.getElementById("brandHome"),
-    tabButtons: Array.from(document.querySelectorAll(".tab-button")),
-    mapView: document.getElementById("mapView"),
-    statsView: document.getElementById("statsView"),
-    stickersView: document.getElementById("stickersView"),
+    brandHome: $("brandHome"),
+    tabButtons: [...document.querySelectorAll(".tab-button")],
+    mapView: $("mapView"), statsView: $("statsView"), stickersView: $("stickersView"),
     mapShell: document.querySelector(".map-shell"),
-    spotCount: document.getElementById("spotCount"),
-    addButton: document.getElementById("addButton"),
-    myLocationButton: document.getElementById("myLocationButton"),
-    cancelAddMode: document.getElementById("cancelAddMode"),
-    addModeNotice: document.getElementById("addModeNotice"),
-    mapIntro: document.getElementById("mapIntro"),
-    modeBadge: document.getElementById("modeBadge"),
-    statsTotal: document.getElementById("statsTotal"),
-    statsCountries: document.getElementById("statsCountries"),
-    statsTopCountry: document.getElementById("statsTopCountry"),
-    countryRanking: document.getElementById("countryRanking"),
-    dialog: document.getElementById("sightingDialog"),
-    form: document.getElementById("sightingForm"),
-    closeDialog: document.getElementById("closeDialog"),
-    cancelDialog: document.getElementById("cancelDialog"),
-    coordinateText: document.getElementById("coordinateText"),
-    detectedLocation: document.getElementById("detectedLocation"),
-    photoInput: document.getElementById("photoInput"),
-    photoPreviewWrap: document.getElementById("photoPreviewWrap"),
-    photoPreview: document.getElementById("photoPreview"),
-    dateInput: document.getElementById("dateInput"),
-    noteInput: document.getElementById("noteInput"),
-    formMessage: document.getElementById("formMessage"),
-    submitButton: document.getElementById("submitButton")
+    spotCount: $("spotCount"), addButton: $("addButton"), myLocationButton: $("myLocationButton"),
+    cancelAddMode: $("cancelAddMode"), addModeNotice: $("addModeNotice"), mapIntro: $("mapIntro"),
+    modeBadge: $("modeBadge"),
+    statsTotal: $("statsTotal"), statsCountries: $("statsCountries"), statsTopCountry: $("statsTopCountry"),
+    countryRanking: $("countryRanking"),
+    dialog: $("sightingDialog"), form: $("sightingForm"), dialogEyebrow: $("dialogEyebrow"),
+    dialogTitle: $("dialogTitle"), closeDialog: $("closeDialog"), cancelDialog: $("cancelDialog"),
+    coordinateText: $("coordinateText"), detectedLocation: $("detectedLocation"),
+    photoFieldWrap: $("photoFieldWrap"), photoInput: $("photoInput"),
+    photoPreviewWrap: $("photoPreviewWrap"), photoPreview: $("photoPreview"),
+    dateInput: $("dateInput"), noteInput: $("noteInput"), addedByInput: $("addedByInput"),
+    formMessage: $("formMessage"), submitButton: $("submitButton")
   };
 
   if (!window.L) {
     els.modeBadge.textContent = "Map library failed to load — refresh the page";
-    els.addButton.disabled = true;
-    els.myLocationButton.disabled = true;
     return;
   }
 
-  const WORLD_BOUNDS = L.latLngBounds(
-    L.latLng(-85.0511, -180),
-    L.latLng(85.0511, 180)
-  );
-
+  const WORLD_BOUNDS = L.latLngBounds([-85.0511, -180], [85.0511, 180]);
   const map = L.map("map", {
-    minZoom: 2,
-    maxZoom: 19,
-    zoomControl: true,
-    worldCopyJump: false,
-    maxBounds: WORLD_BOUNDS,
-    maxBoundsViscosity: 0.9,
-    bounceAtZoomLimits: false
+    minZoom: 2, maxZoom: 19, zoomControl: true, worldCopyJump: false,
+    maxBounds: WORLD_BOUNDS, maxBoundsViscosity: 0.9
   }).setView([22, 7], 2);
 
-  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    minZoom: 2,
-    maxZoom: 19,
-    noWrap: true,
-    bounds: WORLD_BOUNDS,
-    updateWhenIdle: true,
-    updateWhenZooming: false,
-    keepBuffer: 2,
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    minZoom: 2, maxZoom: 19, noWrap: true, bounds: WORLD_BOUNDS,
+    updateWhenIdle: true, keepBuffer: 2,
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
-  tiles.on("tileerror", () => {
-    if (!els.modeBadge.classList.contains("live")) {
-      els.modeBadge.textContent = "Some map tiles are slow to load — your sightings are still safe";
-    }
-  });
-
   const markerLayer = L.markerClusterGroup({
-    showCoverageOnHover: false,
-    maxClusterRadius: 45,
-    spiderfyOnMaxZoom: true,
-    removeOutsideVisibleBounds: true
+    showCoverageOnHover: false, maxClusterRadius: 45, removeOutsideVisibleBounds: true
   });
   map.addLayer(markerLayer);
 
   const markerIcon = L.divIcon({
     className: "",
     html: '<div class="nett-marker"><span>N</span></div>',
-    iconSize: [31, 31],
-    iconAnchor: [15, 30],
-    popupAnchor: [0, -29]
+    iconSize: [31,31], iconAnchor: [15,30], popupAnchor: [0,-29]
   });
 
-  const resizeMap = () => {
-    window.requestAnimationFrame(() => map.invalidateSize({ pan: false }));
-  };
+  const resizeMap = () => requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+  addEventListener("resize", resizeMap, { passive: true });
+  addEventListener("orientationchange", () => setTimeout(resizeMap, 180), { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(resizeMap).observe(els.mapShell);
+  setTimeout(resizeMap, 100);
 
-  window.addEventListener("resize", resizeMap, { passive: true });
-  window.addEventListener("orientationchange", () => setTimeout(resizeMap, 180), {
-    passive: true
-  });
-
-  if (window.ResizeObserver) {
-    const observer = new ResizeObserver(resizeMap);
-    observer.observe(document.querySelector(".map-shell"));
-  }
-
-  setTimeout(resizeMap, 50);
-  setTimeout(resizeMap, 350);
-
-  function localDateValue() {
+  function today() {
     const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
   }
+  els.dateInput.value = today();
 
-  els.dateInput.value = localDateValue();
-
-  function setStatus(text, live = false) {
+  function setStatus(text, isLive = false) {
     els.modeBadge.textContent = text;
-    els.modeBadge.classList.toggle("live", live);
+    els.modeBadge.classList.toggle("live", isLive);
+  }
+  setStatus(live ? "Connecting to shared map…" : "Demo mode");
+
+  function switchView(name) {
+    els.mapView.hidden = name !== "map";
+    els.statsView.hidden = name !== "stats";
+    els.stickersView.hidden = name !== "stickers";
+    els.tabButtons.forEach(btn => {
+      const active = btn.dataset.view === name;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", String(active));
+    });
+    if (name === "map") setTimeout(resizeMap, 20);
+    if (name === "stats") renderStats();
   }
 
-  if (globalMode) {
-    setStatus("Connecting to shared map…");
-  } else {
-    setStatus("Demo mode · connect Supabase to share sightings worldwide");
-  }
-
-  function switchView(viewName) {
-    const valid = ["map", "stats", "stickers"];
-    if (!valid.includes(viewName)) return;
-
-    state.activeView = viewName;
-    els.mapView.hidden = viewName !== "map";
-    els.statsView.hidden = viewName !== "stats";
-    els.stickersView.hidden = viewName !== "stickers";
-
-    for (const button of els.tabButtons) {
-      const active = button.dataset.view === viewName;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-selected", String(active));
-    }
-
-    if (viewName === "map") {
-      setTimeout(resizeMap, 20);
-    }
-
-    if (viewName === "stats") {
-      renderStats();
-    }
-  }
-
-  els.tabButtons.forEach((button) => {
-    button.addEventListener("click", () => switchView(button.dataset.view));
-  });
-
+  els.tabButtons.forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
   els.brandHome.addEventListener("click", () => switchView("map"));
 
   function setAdding(on) {
-    state.adding = Boolean(on);
+    state.adding = !!on;
     els.mapShell.classList.toggle("adding", state.adding);
     els.addModeNotice.hidden = !state.adding;
     els.mapIntro.hidden = state.adding;
-    els.addButton.setAttribute("aria-pressed", String(state.adding));
   }
 
   els.addButton.addEventListener("click", () => {
     switchView("map");
-    setTimeout(() => setAdding(!state.adding), 20);
+    setAdding(!state.adding);
   });
-
   els.cancelAddMode.addEventListener("click", () => setAdding(false));
 
-  map.on("click", (event) => {
+  map.on("click", e => {
     if (!state.adding) return;
     setAdding(false);
-    beginSightingAt(event.latlng.lat, event.latlng.lng, false);
+    openAddAt(e.latlng.lat, e.latlng.lng, false);
   });
 
   els.myLocationButton.addEventListener("click", () => {
     switchView("map");
-
-    if (!navigator.geolocation) {
-      setStatus("Your browser does not support location access");
-      return;
-    }
+    if (!navigator.geolocation) return setStatus("Location is not supported by this browser");
 
     els.myLocationButton.disabled = true;
     els.myLocationButton.textContent = "Finding you…";
-
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
         map.setView([lat, lng], 16, { animate: true });
-        els.myLocationButton.disabled = false;
-        els.myLocationButton.innerHTML =
-          '<span class="location-dot" aria-hidden="true"></span> Plot my location';
-
-        beginSightingAt(lat, lng, true);
+        resetLocationButton();
+        openAddAt(lat, lng, true);
       },
-      (error) => {
-        console.error(error);
-        els.myLocationButton.disabled = false;
-        els.myLocationButton.innerHTML =
-          '<span class="location-dot" aria-hidden="true"></span> Plot my location';
-
-        if (error.code === 1) {
-          setStatus("Location permission was denied — you can still tap the map");
-        } else {
-          setStatus("Could not get your exact location — you can still tap the map");
-        }
+      err => {
+        console.error(err);
+        resetLocationButton();
+        setStatus(err.code === 1
+          ? "Location permission denied — tap the map instead"
+          : "Could not get your location — tap the map instead");
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 12000,
-        maximumAge: 15000
-      }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 15000 }
     );
   });
 
-  function beginSightingAt(lat, lng, fromCurrentLocation) {
-    state.selectedLatLng = L.latLng(lat, lng);
-    state.location = null;
-
-    els.coordinateText.textContent = fromCurrentLocation
-      ? `Using your device location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`
-      : `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
-
-    els.detectedLocation.textContent = "Finding location…";
-    els.formMessage.textContent = "";
-    els.formMessage.classList.remove("success");
-    els.submitButton.disabled = false;
-    els.submitButton.textContent = "Add to the map";
-
-    state.locationLookupPromise = reverseGeocode(lat, lng)
-      .then((location) => {
-        state.location = location;
-        els.detectedLocation.textContent = location.place;
-        return location;
-      })
-      .catch((error) => {
-        console.warn("Reverse geocoding failed:", error);
-        const fallback = {
-          place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-          country: null,
-          countryCode: null
-        };
-        state.location = fallback;
-        els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
-        return fallback;
-      });
-
-    openDialog();
+  function resetLocationButton() {
+    els.myLocationButton.disabled = false;
+    els.myLocationButton.innerHTML = '<span class="location-dot" aria-hidden="true"></span> Plot my location';
   }
+
+  function safeText(v, max) { return String(v || "").trim().slice(0, max); }
 
   async function reverseGeocode(lat, lng) {
     const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
-
-    if (state.geocodeCache.has(cacheKey)) {
-      return state.geocodeCache.get(cacheKey);
-    }
+    if (state.geocodeCache.has(cacheKey)) return state.geocodeCache.get(cacheKey);
 
     const url = new URL("https://nominatim.openstreetmap.org/reverse");
     url.searchParams.set("format", "jsonv2");
@@ -305,53 +165,90 @@
     url.searchParams.set("addressdetails", "1");
     url.searchParams.set("accept-language", navigator.language || "en");
 
-    const response = await fetch(url.toString(), {
-      headers: { Accept: "application/json" }
-    });
+    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error(`Location lookup failed (${res.status})`);
+    const data = await res.json();
+    const a = data.address || {};
+    const locality = a.city || a.town || a.village || a.municipality || a.county || a.state_district || a.state || "";
+    const country = a.country || "";
+    const countryCode = String(a.country_code || "").toUpperCase() || null;
+    const place = locality && country && locality !== country
+      ? `${locality}, ${country}`
+      : (locality || country || data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
 
-    if (!response.ok) {
-      throw new Error(`Location lookup failed (${response.status})`);
-    }
-
-    const data = await response.json();
-    const address = data.address || {};
-
-    const locality =
-      address.city ||
-      address.town ||
-      address.village ||
-      address.municipality ||
-      address.county ||
-      address.state_district ||
-      address.state ||
-      "";
-
-    const country = address.country || "";
-    const countryCode = String(address.country_code || "").toUpperCase() || null;
-
-    let place = "";
-    if (locality && country && locality !== country) {
-      place = `${locality}, ${country}`;
-    } else {
-      place = locality || country || data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    }
-
-    const result = {
-      place: String(place).slice(0, 120),
-      country: country ? String(country).slice(0, 100) : null,
-      countryCode
-    };
-
+    const result = { place: safeText(place, 120), country: safeText(country, 100) || null, countryCode };
     state.geocodeCache.set(cacheKey, result);
     return result;
   }
 
+  function beginLocationLookup(lat, lng) {
+    state.location = null;
+    els.detectedLocation.textContent = "Finding location…";
+    state.locationLookupPromise = reverseGeocode(lat, lng)
+      .then(loc => {
+        state.location = loc;
+        els.detectedLocation.textContent = loc.place;
+        return loc;
+      })
+      .catch(err => {
+        console.warn(err);
+        const fallback = { place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, country: null, countryCode: null };
+        state.location = fallback;
+        els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        return fallback;
+      });
+  }
+
+  function openAddAt(lat, lng, fromDevice) {
+    state.mode = "add";
+    state.editingId = null;
+    state.selectedLatLng = L.latLng(lat, lng);
+
+    els.dialogEyebrow.textContent = "NEW SIGHTING";
+    els.dialogTitle.textContent = "Add this sticker";
+    els.submitButton.textContent = "Add to the map";
+    els.photoFieldWrap.hidden = false;
+    els.photoInput.required = true;
+    els.form.reset();
+    els.dateInput.value = today();
+    els.photoPreviewWrap.hidden = true;
+    els.coordinateText.textContent = fromDevice
+      ? `Using your device location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`
+      : `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
+    beginLocationLookup(lat, lng);
+    openDialog();
+  }
+
+  function openEdit(spot) {
+    state.mode = "edit";
+    state.editingId = spot.id;
+    state.selectedLatLng = L.latLng(Number(spot.lat), Number(spot.lng));
+
+    els.dialogEyebrow.textContent = "EDIT SIGHTING";
+    els.dialogTitle.textContent = "Edit this sticker";
+    els.submitButton.textContent = "Save changes";
+    els.photoFieldWrap.hidden = true;
+    els.photoInput.required = false;
+    els.formMessage.textContent = "";
+    els.noteInput.value = spot.note || "";
+    els.dateInput.value = spot.spotted_on || today();
+    els.addedByInput.value = spot.added_by || "";
+    els.coordinateText.textContent = `Pinned at ${Number(spot.lat).toFixed(5)}, ${Number(spot.lng).toFixed(5)}.`;
+
+    els.photoPreview.src = spot.image_url;
+    els.photoPreviewWrap.hidden = !spot.image_url;
+
+    // Re-detect every time edit is opened. This lets older plots gain country data.
+    beginLocationLookup(Number(spot.lat), Number(spot.lng));
+    openDialog();
+  }
+
   function openDialog() {
-    if (typeof els.dialog.showModal === "function") {
-      els.dialog.showModal();
-    } else {
-      els.dialog.setAttribute("open", "");
-    }
+    els.formMessage.textContent = "";
+    els.formMessage.classList.remove("success");
+    els.submitButton.disabled = false;
+    if (typeof els.dialog.showModal === "function") els.dialog.showModal();
+    else els.dialog.setAttribute("open", "");
   }
 
   function closeDialog() {
@@ -359,289 +256,162 @@
       URL.revokeObjectURL(state.previewUrl);
       state.previewUrl = null;
     }
-
+    els.form.reset();
     els.photoPreviewWrap.hidden = true;
     els.photoPreview.removeAttribute("src");
-    els.form.reset();
-    els.dateInput.value = localDateValue();
+    els.dateInput.value = today();
     state.selectedLatLng = null;
     state.location = null;
     state.locationLookupPromise = null;
-
-    if (typeof els.dialog.close === "function") {
-      els.dialog.close();
-    } else {
-      els.dialog.removeAttribute("open");
-    }
+    state.editingId = null;
+    if (typeof els.dialog.close === "function") els.dialog.close();
+    else els.dialog.removeAttribute("open");
   }
 
   els.closeDialog.addEventListener("click", closeDialog);
   els.cancelDialog.addEventListener("click", closeDialog);
-
-  els.dialog.addEventListener("click", (event) => {
-    if (event.target === els.dialog) closeDialog();
-  });
+  els.dialog.addEventListener("click", e => { if (e.target === els.dialog) closeDialog(); });
 
   els.photoInput.addEventListener("change", () => {
-    const file = els.photoInput.files && els.photoInput.files[0];
-
-    if (!file) {
-      els.photoPreviewWrap.hidden = true;
-      return;
-    }
-
+    const file = els.photoInput.files?.[0];
+    if (!file) return;
     if (!file.type.startsWith("image/")) {
       els.formMessage.textContent = "Please choose an image file.";
       els.photoInput.value = "";
       return;
     }
-
     if (state.previewUrl) URL.revokeObjectURL(state.previewUrl);
-
     state.previewUrl = URL.createObjectURL(file);
     els.photoPreview.src = state.previewUrl;
     els.photoPreviewWrap.hidden = false;
-    els.formMessage.textContent = "";
   });
-
-  async function imageToBlob(file, maxDimension = 1800, quality = 0.82) {
-    const image = await loadImage(file);
-    const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-    const width = Math.max(1, Math.round(image.width * scale));
-    const height = Math.max(1, Math.round(image.height * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext("2d", { alpha: false });
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-    ctx.drawImage(image, 0, 0, width, height);
-
-    return await new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error("Could not process image."))),
-        "image/jpeg",
-        quality
-      );
-    });
-  }
 
   function loadImage(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
-      const image = new Image();
-
-      image.onload = () => {
-        URL.revokeObjectURL(url);
-        resolve(image);
-      };
-
-      image.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Could not read that image."));
-      };
-
-      image.src = url;
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read that image.")); };
+      img.src = url;
     });
   }
 
-  function blobToDataUrl(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+  async function imageToBlob(file, maxDimension = 1800, quality = 0.82) {
+    const img = await loadImage(file);
+    const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return new Promise((resolve, reject) => canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("Could not process image.")),
+      "image/jpeg", quality
+    ));
   }
 
-  function safeText(value, max) {
-    return String(value || "").trim().slice(0, max);
-  }
+  els.form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const lat = Number(state.selectedLatLng?.lat);
+    const lng = Number(state.selectedLatLng?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
-  function validateLatLng(lat, lng) {
-    return (
-      Number.isFinite(lat) &&
-      Number.isFinite(lng) &&
-      lat >= -90 &&
-      lat <= 90 &&
-      lng >= -180 &&
-      lng <= 180
-    );
-  }
-
-  els.form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-
-    if (!state.selectedLatLng) {
-      els.formMessage.textContent = "Please choose a point on the map first.";
+    const addedBy = safeText(els.addedByInput.value, 80);
+    if (!addedBy) {
+      els.formMessage.textContent = "Please enter your name.";
       return;
     }
 
-    const file = els.photoInput.files && els.photoInput.files[0];
-
-    if (!file) {
+    const file = els.photoInput.files?.[0];
+    if (state.mode === "add" && !file) {
       els.formMessage.textContent = "A photo is required.";
       return;
     }
 
-    if (file.size > 25 * 1024 * 1024) {
-      els.formMessage.textContent = "That image is too large. Please choose one under 25 MB.";
-      return;
-    }
-
-    const lat = Number(state.selectedLatLng.lat);
-    const lng = Number(state.selectedLatLng.lng);
-
-    if (!validateLatLng(lat, lng)) {
-      els.formMessage.textContent = "That map position is invalid. Please pick the spot again.";
-      return;
-    }
-
-    const note = safeText(els.noteInput.value, 500);
-    const spottedOn = els.dateInput.value || localDateValue();
-
     els.submitButton.disabled = true;
-    els.submitButton.textContent = globalMode ? "Uploading…" : "Saving…";
-    els.formMessage.textContent = "";
+    els.submitButton.textContent = state.mode === "edit" ? "Saving…" : "Uploading…";
 
     try {
-      const location = state.locationLookupPromise
-        ? await state.locationLookupPromise
-        : state.location || {
-            place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-            country: null,
-            countryCode: null
-          };
+      const loc = state.locationLookupPromise ? await state.locationLookupPromise : state.location;
+      const common = {
+        place: loc?.place || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+        country: loc?.country || null,
+        country_code: loc?.countryCode || null,
+        note: safeText(els.noteInput.value, 500) || null,
+        spotted_on: els.dateInput.value || today(),
+        added_by: addedBy
+      };
 
-      let newSpot;
+      if (state.mode === "edit") {
+        if (!live) throw new Error("Editing requires the live shared map.");
 
-      if (globalMode) {
-        const compressed = await imageToBlob(file);
-
-        if (compressed.size > 6 * 1024 * 1024) {
-          throw new Error("The compressed photo is still too large. Please choose a smaller image.");
-        }
-
-        const bucket = config.photoBucket || "sticker-photos";
-        const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
-
-        const uploadResult = await db.storage
-          .from(bucket)
-          .upload(fileName, compressed, {
-            contentType: "image/jpeg",
-            cacheControl: "31536000",
-            upsert: false
-          });
-
-        if (uploadResult.error) throw uploadResult.error;
-
-        const publicUrlResult = db.storage.from(bucket).getPublicUrl(fileName);
-        const imageUrl = publicUrlResult.data.publicUrl;
-
-        const row = {
-          lat,
-          lng,
-          place: location.place || null,
-          country: location.country || null,
-          country_code: location.countryCode || null,
-          sticker_type: "nett_hier",
-          note: note || null,
-          spotted_on: spottedOn,
-          image_url: imageUrl
-        };
-
-        const insertResult = await db
+        const result = await db
           .from("spots")
-          .insert(row)
+          .update(common)
+          .eq("id", state.editingId)
           .select("*")
           .single();
 
-        if (insertResult.error) {
-          try {
-            await db.storage.from(bucket).remove([fileName]);
-          } catch {}
-          throw insertResult.error;
-        }
-
-        newSpot = insertResult.data;
+        if (result.error) throw result.error;
+        replaceSpot(result.data);
+        els.formMessage.textContent = "Updated!";
+        els.formMessage.classList.add("success");
       } else {
-        const compressed = await imageToBlob(file, 1000, 0.72);
-        const imageUrl = await blobToDataUrl(compressed);
+        let imageUrl;
+        if (live) {
+          const compressed = await imageToBlob(file);
+          const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
+          const bucket = config.photoBucket || "sticker-photos";
+          const upload = await db.storage.from(bucket).upload(fileName, compressed, {
+            contentType: "image/jpeg", cacheControl: "31536000", upsert: false
+          });
+          if (upload.error) throw upload.error;
+          imageUrl = db.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
 
-        newSpot = {
-          id: crypto.randomUUID(),
-          lat,
-          lng,
-          place: location.place || null,
-          country: location.country || null,
-          country_code: location.countryCode || null,
-          sticker_type: "nett_hier",
-          note: note || null,
-          spotted_on: spottedOn,
-          image_url: imageUrl,
-          created_at: new Date().toISOString()
-        };
-
-        const current = readLocalSpots();
-        current.unshift(newSpot);
-
-        try {
-          localStorage.setItem("nett-hier-spots-v3", JSON.stringify(current));
-        } catch {
-          throw new Error(
-            "This browser has run out of demo storage. Connect Supabase for shared photo storage."
-          );
+          const result = await db.from("spots").insert({
+            lat, lng, ...common, sticker_type: "nett_hier", image_url: imageUrl
+          }).select("*").single();
+          if (result.error) throw result.error;
+          upsertSpot(result.data);
+        } else {
+          throw new Error("Connect Supabase before adding shared sightings.");
         }
+
+        els.formMessage.textContent = "Added — it is live worldwide!";
+        els.formMessage.classList.add("success");
       }
-
-      addSpotIfNew(newSpot);
-      els.formMessage.textContent = globalMode
-        ? "Added — it is live worldwide!"
-        : "Added to this device.";
-      els.formMessage.classList.add("success");
-
-      const savedLatLng = [Number(newSpot.lat), Number(newSpot.lng)];
 
       setTimeout(() => {
         closeDialog();
         switchView("map");
-        map.setView(savedLatLng, Math.max(map.getZoom(), 11), { animate: true });
-      }, 450);
-    } catch (error) {
-      console.error(error);
+        map.setView([lat, lng], Math.max(map.getZoom(), 11), { animate: true });
+      }, 400);
+    } catch (err) {
+      console.error(err);
       els.formMessage.classList.remove("success");
-      els.formMessage.textContent =
-        error && error.message
-          ? error.message
-          : "Something went wrong while saving this sighting.";
+      els.formMessage.textContent = err?.message || "Something went wrong.";
       els.submitButton.disabled = false;
-      els.submitButton.textContent = "Add to the map";
+      els.submitButton.textContent = state.mode === "edit" ? "Save changes" : "Add to the map";
     }
   });
 
-  function readLocalSpots() {
-    try {
-      const v3 = JSON.parse(localStorage.getItem("nett-hier-spots-v3") || "[]");
-      if (Array.isArray(v3) && v3.length) return v3;
-
-      const v2 = JSON.parse(localStorage.getItem("nett-hier-spots-v2") || "[]");
-      return Array.isArray(v2) ? v2 : [];
-    } catch {
-      return [];
-    }
+  function formatDate(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return "Date not supplied";
+    const [y,m,d] = value.split("-").map(Number);
+    return new Intl.DateTimeFormat(undefined, { day:"numeric", month:"short", year:"numeric", timeZone:"UTC" })
+      .format(new Date(Date.UTC(y,m-1,d)));
   }
 
   function buildPopup(spot) {
     const card = document.createElement("div");
     card.className = "popup-card";
 
-    const image = document.createElement("img");
-    image.src = spot.image_url;
-    image.alt = spot.place ? `Sticker sighting in ${spot.place}` : "Sticker sighting";
-    image.loading = "lazy";
-    card.appendChild(image);
+    const img = document.createElement("img");
+    img.src = spot.image_url;
+    img.alt = spot.place ? `Sticker sighting in ${spot.place}` : "Sticker sighting";
+    card.appendChild(img);
 
     const title = document.createElement("strong");
     title.textContent = spot.place || "Nett hier. spotted here";
@@ -658,182 +428,102 @@
       card.appendChild(note);
     }
 
+    const by = document.createElement("p");
+    by.className = "popup-added-by";
+    by.textContent = `Added by — ${spot.added_by || "Unknown"}`;
+    card.appendChild(by);
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.className = "popup-edit-button";
+    edit.textContent = "Edit sighting";
+    edit.addEventListener("click", () => {
+      map.closePopup();
+      openEdit(spot);
+    });
+    card.appendChild(edit);
+
     return card;
   }
 
-  function formatDate(value) {
-    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return "Date not supplied";
-    }
-
-    const [year, month, day] = value.split("-").map(Number);
-
-    return new Intl.DateTimeFormat(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC"
-    }).format(new Date(Date.UTC(year, month - 1, day)));
-  }
-
-  function addMarker(spot) {
-    const lat = Number(spot.lat);
-    const lng = Number(spot.lng);
-
-    if (!validateLatLng(lat, lng) || !spot.image_url) return;
-
-    const marker = L.marker([lat, lng], { icon: markerIcon });
-    marker.bindPopup(buildPopup(spot), {
-      maxWidth: 250,
-      autoPanPadding: [24, 24]
-    });
-    markerLayer.addLayer(marker);
-  }
-
-  function addSpotIfNew(spot) {
-    const id = String(spot && spot.id ? spot.id : "");
-    if (!id || state.spotIds.has(id)) return false;
-
-    state.spotIds.add(id);
-    state.spots.push(spot);
-    addMarker(spot);
-    updateCount();
-    renderStats();
-    return true;
-  }
-
-  function renderSpots(spots) {
+  function renderMarkers() {
     markerLayer.clearLayers();
-    state.spots = [];
-    state.spotIds.clear();
-
-    for (const spot of spots) {
-      addSpotIfNew(spot);
-    }
-
+    state.spots.forEach(spot => {
+      const lat = Number(spot.lat), lng = Number(spot.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || !spot.image_url) return;
+      const marker = L.marker([lat,lng], { icon: markerIcon });
+      marker.bindPopup(buildPopup(spot), { maxWidth: 250, autoPanPadding: [24,24] });
+      markerLayer.addLayer(marker);
+    });
     updateCount();
     renderStats();
   }
 
-  function updateCount() {
-    els.spotCount.textContent = String(state.spots.length);
+  function upsertSpot(spot) {
+    const i = state.spots.findIndex(s => s.id === spot.id);
+    if (i >= 0) state.spots[i] = spot;
+    else state.spots.unshift(spot);
+    renderMarkers();
   }
+
+  function replaceSpot(spot) { upsertSpot(spot); }
+
+  function updateCount() { els.spotCount.textContent = String(state.spots.length); }
 
   function renderStats() {
     const counts = new Map();
-
-    for (const spot of state.spots) {
-      const country = safeText(spot.country, 100);
-      if (!country) continue;
-      counts.set(country, (counts.get(country) || 0) + 1);
-    }
-
-    const ranking = Array.from(counts.entries()).sort((a, b) => {
-      if (b[1] !== a[1]) return b[1] - a[1];
-      return a[0].localeCompare(b[0]);
+    state.spots.forEach(spot => {
+      const c = safeText(spot.country, 100);
+      if (c) counts.set(c, (counts.get(c) || 0) + 1);
     });
-
+    const ranking = [...counts.entries()].sort((a,b) => b[1]-a[1] || a[0].localeCompare(b[0]));
     els.statsTotal.textContent = String(state.spots.length);
     els.statsCountries.textContent = String(counts.size);
-    els.statsTopCountry.textContent = ranking.length ? ranking[0][0] : "—";
-
+    els.statsTopCountry.textContent = ranking[0]?.[0] || "—";
     els.countryRanking.replaceChildren();
 
     if (!ranking.length) {
-      const empty = document.createElement("p");
-      empty.className = "empty-state";
-      empty.textContent =
-        state.spots.length
-          ? "Existing sightings do not have country data yet. New sightings will be counted automatically."
-          : "No sightings yet.";
-      els.countryRanking.appendChild(empty);
+      const p = document.createElement("p");
+      p.className = "empty-state";
+      p.textContent = state.spots.length
+        ? "Existing sightings have no country data yet. Open a pin and press Edit sighting, then Save changes."
+        : "No sightings yet.";
+      els.countryRanking.appendChild(p);
       return;
     }
 
     const max = ranking[0][1];
-
-    for (const [country, count] of ranking) {
-      const row = document.createElement("div");
-      row.className = "country-row";
-
-      const name = document.createElement("div");
-      name.className = "country-name";
-      name.textContent = country;
-
-      const track = document.createElement("div");
-      track.className = "country-bar-track";
-
-      const bar = document.createElement("div");
-      bar.className = "country-bar";
-      bar.style.width = `${Math.max(3, (count / max) * 100)}%`;
-      track.appendChild(bar);
-
-      const value = document.createElement("div");
-      value.className = "country-count";
-      value.textContent = String(count);
-
-      row.append(name, track, value);
-      els.countryRanking.appendChild(row);
-    }
-  }
-
-  function subscribeToLiveSpots() {
-    if (!globalMode) return;
-
-    state.realtimeChannel = db
-      .channel("nett-hier-live-spots")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "spots"
-        },
-        (payload) => {
-          if (payload && payload.new) {
-            addSpotIfNew(payload.new);
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setStatus("Live · shared worldwide", true);
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setStatus("Shared map connected · live updates delayed", true);
-        }
-      });
+    ranking.forEach(([country,count]) => {
+      const row = document.createElement("div"); row.className = "country-row";
+      const name = document.createElement("div"); name.className = "country-name"; name.textContent = country;
+      const track = document.createElement("div"); track.className = "country-bar-track";
+      const bar = document.createElement("div"); bar.className = "country-bar"; bar.style.width = `${Math.max(3,count/max*100)}%`;
+      const val = document.createElement("div"); val.className = "country-count"; val.textContent = String(count);
+      track.appendChild(bar); row.append(name,track,val); els.countryRanking.appendChild(row);
+    });
   }
 
   async function loadSpots() {
+    if (!live) return setStatus("Demo mode");
     try {
-      if (globalMode) {
-        const result = await db
-          .from("spots")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(10000);
+      const result = await db.from("spots").select("*").order("created_at", { ascending:false }).limit(10000);
+      if (result.error) throw result.error;
+      state.spots = result.data || [];
+      renderMarkers();
+      setStatus("Live · shared worldwide", true);
 
-        if (result.error) throw result.error;
-
-        renderSpots(result.data || []);
-        setStatus("Live · shared worldwide", true);
-        subscribeToLiveSpots();
-      } else {
-        renderSpots(readLocalSpots());
-      }
-    } catch (error) {
-      console.error(error);
-
-      if (globalMode) {
-        setStatus("Could not connect to shared map — check Supabase setup");
-      }
+      state.realtimeChannel = db.channel("nett-hier-live-spots")
+        .on("postgres_changes", { event:"INSERT", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
+        .on("postgres_changes", { event:"UPDATE", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
+        .subscribe();
+    } catch (err) {
+      console.error(err);
+      setStatus("Could not connect to shared map — check Supabase setup");
     }
   }
 
-  window.addEventListener("pagehide", () => {
-    if (db && state.realtimeChannel) {
-      db.removeChannel(state.realtimeChannel);
-    }
+  addEventListener("pagehide", () => {
+    if (db && state.realtimeChannel) db.removeChannel(state.realtimeChannel);
   });
 
   loadSpots();

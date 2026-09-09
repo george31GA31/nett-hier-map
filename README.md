@@ -1,19 +1,33 @@
-# Nett hier. Sticker Map — V3
+# Nett hier. Sticker Map — V4
 
 ## New
-- Automatic place/country lookup after tapping the map.
-- Plot my location button using the device's current location.
-- Stats tab with country ranking.
-- Stickers tab with the current accepted sticker and an anti-vandalism disclaimer.
-- Mobile/iPad layout retained.
-- Live Supabase config already included.
+- Every new sighting asks for **Added by**.
+- Popups show `Added by — Name`.
+- Every existing pin now has an **Edit sighting** button.
+- Opening Edit automatically re-detects the location/country from its stored coordinates.
+- Saving an old sighting therefore adds it into the country statistics.
+- Date, note and added-by name can also be edited.
+- Live updates now listen for both new sightings and edits.
 
-## Before uploading V3
-Run `supabase_update_v3.sql` once in Supabase SQL Editor.
+## Upgrade steps
 
-## Then replace these GitHub files
-`index.html`, `styles.css`, `app.js`, `config.js`, `favicon.svg`,
-and `nett-hier-sticker.webp`.
+1. In Supabase → SQL Editor, run `supabase_update_v4.sql`.
+2. It should say `Success. No rows returned`.
+3. Replace the GitHub versions of:
+   - `index.html`
+   - `styles.css`
+   - `app.js`
+   - `config.js`
+   - `favicon.svg`
+   - `nett-hier-sticker.webp`
+4. Commit and wait for GitHub Pages to deploy.
+5. Hard refresh the site.
 
-The automatic place name uses OpenStreetMap Nominatim reverse geocoding.
-If that lookup is temporarily unavailable, exact coordinates are still saved.
+## Important editing note
+
+There is no account/login system yet, so the Edit button is public. That means
+any visitor can edit the metadata on any pin. Image deletion/replacement is not
+enabled through the edit form.
+
+A later version can restrict editing to an admin account or to the person who
+created the sighting.

@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="styles.css?v=3" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <header class="site-header">
@@ -43,19 +43,13 @@
   </header>
 
   <nav class="tab-bar" aria-label="Main sections">
-    <button class="tab-button active" type="button" data-view="map" aria-selected="true">
-      <span aria-hidden="true">◉</span> Map
-    </button>
-    <button class="tab-button" type="button" data-view="stats" aria-selected="false">
-      <span aria-hidden="true">▥</span> Stats
-    </button>
-    <button class="tab-button" type="button" data-view="stickers" aria-selected="false">
-      <span aria-hidden="true">●</span> Stickers
-    </button>
+    <button class="tab-button active" type="button" data-view="map" aria-selected="true">Map</button>
+    <button class="tab-button" type="button" data-view="stats" aria-selected="false">Stats</button>
+    <button class="tab-button" type="button" data-view="stickers" aria-selected="false">Stickers</button>
   </nav>
 
   <main class="app-main">
-    <section id="mapView" class="view map-view active" aria-label="Sticker map">
+    <section id="mapView" class="view map-view" aria-label="Sticker map">
       <div class="map-shell">
         <div id="map" aria-label="Interactive world map of sticker sightings"></div>
 
@@ -106,7 +100,7 @@
         <section class="ranking-section">
           <div class="section-heading">
             <h2>Most sightings by country</h2>
-            <p>Based on the location automatically detected when each sighting is added.</p>
+            <p>Based on the location automatically detected for each sighting.</p>
           </div>
           <div id="countryRanking" class="country-ranking">
             <p class="empty-state">No sightings yet.</p>
@@ -134,7 +128,7 @@
               sticker shown here.
             </p>
             <p class="muted-copy">
-              We can add more recognised sticker designs and clearer rules here later.
+              More recognised sticker designs and clearer rules can be added here later.
             </p>
           </div>
         </article>
@@ -156,8 +150,8 @@
     <form id="sightingForm">
       <div class="dialog-header">
         <div>
-          <p class="eyebrow">NEW SIGHTING</p>
-          <h1>Add this sticker</h1>
+          <p class="eyebrow" id="dialogEyebrow">NEW SIGHTING</p>
+          <h1 id="dialogTitle">Add this sticker</h1>
         </div>
         <button class="icon-button" id="closeDialog" type="button" aria-label="Close">×</button>
       </div>
@@ -170,11 +164,13 @@
         <small>Detected automatically from the map point using OpenStreetMap data.</small>
       </div>
 
-      <label class="field">
-        <span>Photo <b>*</b></span>
-        <input id="photoInput" name="photo" type="file" accept="image/*" required />
-        <small>Take a photo or choose one from your phone/tablet.</small>
-      </label>
+      <div id="photoFieldWrap">
+        <label class="field">
+          <span>Photo <b>*</b></span>
+          <input id="photoInput" name="photo" type="file" accept="image/*" />
+          <small>Take a photo or choose one from your phone/tablet.</small>
+        </label>
+      </div>
 
       <div id="photoPreviewWrap" class="photo-preview-wrap" hidden>
         <img id="photoPreview" alt="Photo preview" />
@@ -196,6 +192,19 @@
         ></textarea>
       </label>
 
+      <label class="field">
+        <span>Added by <b>*</b></span>
+        <input
+          id="addedByInput"
+          name="added_by"
+          type="text"
+          maxlength="80"
+          autocomplete="name"
+          placeholder="Your name"
+          required
+        />
+      </label>
+
       <p id="formMessage" class="form-message" aria-live="polite"></p>
 
       <div class="dialog-actions">
@@ -208,7 +217,7 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="config.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
