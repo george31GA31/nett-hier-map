@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#ffe100" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta
@@ -14,19 +15,20 @@
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
+  <link rel="preconnect" href="https://nominatim.openstreetmap.org" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="./" aria-label="Nett hier sticker map home">
+    <button class="brand" id="brandHome" type="button" aria-label="Open map">
       <img
         src="nett-hier-sticker.webp"
         alt="Nett hier. Aber waren Sie schon mal in Baden-Württemberg?"
       />
-    </a>
+    </button>
 
     <div class="header-actions">
       <div class="spot-count" aria-live="polite">
@@ -40,22 +42,114 @@
     </div>
   </header>
 
-  <main class="map-shell">
-    <div id="map" aria-label="Interactive world map of sticker sightings"></div>
+  <nav class="tab-bar" aria-label="Main sections">
+    <button class="tab-button active" type="button" data-view="map" aria-selected="true">
+      <span aria-hidden="true">◉</span> Map
+    </button>
+    <button class="tab-button" type="button" data-view="stats" aria-selected="false">
+      <span aria-hidden="true">▥</span> Stats
+    </button>
+    <button class="tab-button" type="button" data-view="stickers" aria-selected="false">
+      <span aria-hidden="true">●</span> Stickers
+    </button>
+  </nav>
 
-    <section class="map-intro" id="mapIntro">
-      <strong>Seen one?</strong>
-      <span>Zoom in, tap “Add a sighting”, then tap the exact spot where you found it.</span>
+  <main class="app-main">
+    <section id="mapView" class="view map-view active" aria-label="Sticker map">
+      <div class="map-shell">
+        <div id="map" aria-label="Interactive world map of sticker sightings"></div>
+
+        <section class="map-intro" id="mapIntro">
+          <strong>Seen one?</strong>
+          <span>Tap “Add a sighting” and then tap the exact spot — or use your current location.</span>
+        </section>
+
+        <button id="myLocationButton" class="location-button" type="button">
+          <span class="location-dot" aria-hidden="true"></span>
+          Plot my location
+        </button>
+
+        <section id="addModeNotice" class="add-mode-notice" hidden>
+          <span>Tap the map where you found the sticker.</span>
+          <button id="cancelAddMode" type="button">Cancel</button>
+        </section>
+
+        <div id="modeBadge" class="mode-badge" role="status" aria-live="polite">
+          Loading sightings…
+        </div>
+      </div>
     </section>
 
-    <section id="addModeNotice" class="add-mode-notice" hidden>
-      <span>Tap the map where you found the sticker.</span>
-      <button id="cancelAddMode" type="button">Cancel</button>
+    <section id="statsView" class="view content-view" hidden aria-label="Sticker statistics">
+      <div class="content-wrap">
+        <div class="page-heading">
+          <p class="eyebrow">GLOBAL SIGHTINGS</p>
+          <h1>Stats</h1>
+          <p>Where in the world are these stickers turning up?</p>
+        </div>
+
+        <div class="stat-cards">
+          <article class="stat-card">
+            <span>Total sightings</span>
+            <strong id="statsTotal">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Countries</span>
+            <strong id="statsCountries">0</strong>
+          </article>
+          <article class="stat-card">
+            <span>Top country</span>
+            <strong id="statsTopCountry">—</strong>
+          </article>
+        </div>
+
+        <section class="ranking-section">
+          <div class="section-heading">
+            <h2>Most sightings by country</h2>
+            <p>Based on the location automatically detected when each sighting is added.</p>
+          </div>
+          <div id="countryRanking" class="country-ranking">
+            <p class="empty-state">No sightings yet.</p>
+          </div>
+        </section>
+      </div>
     </section>
 
-    <div id="modeBadge" class="mode-badge" role="status" aria-live="polite">
-      Loading sightings…
-    </div>
+    <section id="stickersView" class="view content-view" hidden aria-label="Allowed sticker types">
+      <div class="content-wrap stickers-wrap">
+        <div class="page-heading">
+          <p class="eyebrow">WHAT TO PLOT</p>
+          <h1>Stickers</h1>
+          <p>This page sets out which sticker sightings belong on the map.</p>
+        </div>
+
+        <article class="sticker-guide-card">
+          <img src="nett-hier-sticker.webp" alt="Yellow Nett hier sticker" />
+          <div>
+            <span class="accepted-pill">Accepted</span>
+            <h2>Nett hier.</h2>
+            <p>
+              For now, plot sightings of the yellow
+              “Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”
+              sticker shown here.
+            </p>
+            <p class="muted-copy">
+              We can add more recognised sticker designs and clearer rules here later.
+            </p>
+          </div>
+        </article>
+
+        <aside class="disclaimer-card">
+          <h2>A quick note</h2>
+          <p>
+            This site is just a bit of fun for documenting stickers that are already out in the world.
+            We do not condone or endorse vandalism, trespassing, fly-posting, or defacing public or
+            private property. Please only photograph stickers safely and lawfully, and do not place
+            stickers anywhere you do not have permission to put them.
+          </p>
+        </aside>
+      </div>
+    </section>
   </main>
 
   <dialog id="sightingDialog" class="sighting-dialog">
@@ -70,6 +164,12 @@
 
       <div class="coordinates" id="coordinateText"></div>
 
+      <div class="detected-location">
+        <span>Location</span>
+        <strong id="detectedLocation">Finding location…</strong>
+        <small>Detected automatically from the map point using OpenStreetMap data.</small>
+      </div>
+
       <label class="field">
         <span>Photo <b>*</b></span>
         <input id="photoInput" name="photo" type="file" accept="image/*" required />
@@ -80,24 +180,10 @@
         <img id="photoPreview" alt="Photo preview" />
       </div>
 
-      <div class="two-col">
-        <label class="field">
-          <span>Place / city</span>
-          <input
-            id="placeInput"
-            name="place"
-            type="text"
-            maxlength="120"
-            autocomplete="off"
-            placeholder="e.g. Dublin, Ireland"
-          />
-        </label>
-
-        <label class="field">
-          <span>Date spotted</span>
-          <input id="dateInput" name="spotted_on" type="date" required />
-        </label>
-      </div>
+      <label class="field">
+        <span>Date spotted</span>
+        <input id="dateInput" name="spotted_on" type="date" required />
+      </label>
 
       <label class="field">
         <span>Note</span>
@@ -122,7 +208,7 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=2"></script>
-  <script src="app.js?v=2"></script>
+  <script src="config.js?v=3"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

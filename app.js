@@ -25,29 +25,43 @@
   const state = {
     adding: false,
     selectedLatLng: null,
+    location: null,
+    locationLookupPromise: null,
     spots: [],
     spotIds: new Set(),
     previewUrl: null,
-    realtimeChannel: null
+    realtimeChannel: null,
+    activeView: "map",
+    geocodeCache: new Map()
   };
 
   const els = {
+    brandHome: document.getElementById("brandHome"),
+    tabButtons: Array.from(document.querySelectorAll(".tab-button")),
+    mapView: document.getElementById("mapView"),
+    statsView: document.getElementById("statsView"),
+    stickersView: document.getElementById("stickersView"),
     mapShell: document.querySelector(".map-shell"),
     spotCount: document.getElementById("spotCount"),
     addButton: document.getElementById("addButton"),
+    myLocationButton: document.getElementById("myLocationButton"),
     cancelAddMode: document.getElementById("cancelAddMode"),
     addModeNotice: document.getElementById("addModeNotice"),
     mapIntro: document.getElementById("mapIntro"),
     modeBadge: document.getElementById("modeBadge"),
+    statsTotal: document.getElementById("statsTotal"),
+    statsCountries: document.getElementById("statsCountries"),
+    statsTopCountry: document.getElementById("statsTopCountry"),
+    countryRanking: document.getElementById("countryRanking"),
     dialog: document.getElementById("sightingDialog"),
     form: document.getElementById("sightingForm"),
     closeDialog: document.getElementById("closeDialog"),
     cancelDialog: document.getElementById("cancelDialog"),
     coordinateText: document.getElementById("coordinateText"),
+    detectedLocation: document.getElementById("detectedLocation"),
     photoInput: document.getElementById("photoInput"),
     photoPreviewWrap: document.getElementById("photoPreviewWrap"),
     photoPreview: document.getElementById("photoPreview"),
-    placeInput: document.getElementById("placeInput"),
     dateInput: document.getElementById("dateInput"),
     noteInput: document.getElementById("noteInput"),
     formMessage: document.getElementById("formMessage"),
@@ -57,6 +71,7 @@
   if (!window.L) {
     els.modeBadge.textContent = "Map library failed to load — refresh the page";
     els.addButton.disabled = true;
+    els.myLocationButton.disabled = true;
     return;
   }
 
@@ -146,6 +161,36 @@
     setStatus("Demo mode · connect Supabase to share sightings worldwide");
   }
 
+  function switchView(viewName) {
+    const valid = ["map", "stats", "stickers"];
+    if (!valid.includes(viewName)) return;
+
+    state.activeView = viewName;
+    els.mapView.hidden = viewName !== "map";
+    els.statsView.hidden = viewName !== "stats";
+    els.stickersView.hidden = viewName !== "stickers";
+
+    for (const button of els.tabButtons) {
+      const active = button.dataset.view === viewName;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+    }
+
+    if (viewName === "map") {
+      setTimeout(resizeMap, 20);
+    }
+
+    if (viewName === "stats") {
+      renderStats();
+    }
+  }
+
+  els.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => switchView(button.dataset.view));
+  });
+
+  els.brandHome.addEventListener("click", () => switchView("map"));
+
   function setAdding(on) {
     state.adding = Boolean(on);
     els.mapShell.classList.toggle("adding", state.adding);
@@ -154,26 +199,154 @@
     els.addButton.setAttribute("aria-pressed", String(state.adding));
   }
 
-  els.addButton.addEventListener("click", () => setAdding(!state.adding));
+  els.addButton.addEventListener("click", () => {
+    switchView("map");
+    setTimeout(() => setAdding(!state.adding), 20);
+  });
+
   els.cancelAddMode.addEventListener("click", () => setAdding(false));
 
   map.on("click", (event) => {
     if (!state.adding) return;
-    state.selectedLatLng = event.latlng;
     setAdding(false);
-    openDialog();
+    beginSightingAt(event.latlng.lat, event.latlng.lng, false);
   });
 
-  function openDialog() {
-    const { lat, lng } = state.selectedLatLng;
-    els.coordinateText.textContent =
-      `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
+  els.myLocationButton.addEventListener("click", () => {
+    switchView("map");
 
+    if (!navigator.geolocation) {
+      setStatus("Your browser does not support location access");
+      return;
+    }
+
+    els.myLocationButton.disabled = true;
+    els.myLocationButton.textContent = "Finding you…";
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        map.setView([lat, lng], 16, { animate: true });
+        els.myLocationButton.disabled = false;
+        els.myLocationButton.innerHTML =
+          '<span class="location-dot" aria-hidden="true"></span> Plot my location';
+
+        beginSightingAt(lat, lng, true);
+      },
+      (error) => {
+        console.error(error);
+        els.myLocationButton.disabled = false;
+        els.myLocationButton.innerHTML =
+          '<span class="location-dot" aria-hidden="true"></span> Plot my location';
+
+        if (error.code === 1) {
+          setStatus("Location permission was denied — you can still tap the map");
+        } else {
+          setStatus("Could not get your exact location — you can still tap the map");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 12000,
+        maximumAge: 15000
+      }
+    );
+  });
+
+  function beginSightingAt(lat, lng, fromCurrentLocation) {
+    state.selectedLatLng = L.latLng(lat, lng);
+    state.location = null;
+
+    els.coordinateText.textContent = fromCurrentLocation
+      ? `Using your device location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`
+      : `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
+
+    els.detectedLocation.textContent = "Finding location…";
     els.formMessage.textContent = "";
     els.formMessage.classList.remove("success");
     els.submitButton.disabled = false;
     els.submitButton.textContent = "Add to the map";
 
+    state.locationLookupPromise = reverseGeocode(lat, lng)
+      .then((location) => {
+        state.location = location;
+        els.detectedLocation.textContent = location.place;
+        return location;
+      })
+      .catch((error) => {
+        console.warn("Reverse geocoding failed:", error);
+        const fallback = {
+          place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+          country: null,
+          countryCode: null
+        };
+        state.location = fallback;
+        els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        return fallback;
+      });
+
+    openDialog();
+  }
+
+  async function reverseGeocode(lat, lng) {
+    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+
+    if (state.geocodeCache.has(cacheKey)) {
+      return state.geocodeCache.get(cacheKey);
+    }
+
+    const url = new URL("https://nominatim.openstreetmap.org/reverse");
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("lat", String(lat));
+    url.searchParams.set("lon", String(lng));
+    url.searchParams.set("zoom", "10");
+    url.searchParams.set("addressdetails", "1");
+    url.searchParams.set("accept-language", navigator.language || "en");
+
+    const response = await fetch(url.toString(), {
+      headers: { Accept: "application/json" }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Location lookup failed (${response.status})`);
+    }
+
+    const data = await response.json();
+    const address = data.address || {};
+
+    const locality =
+      address.city ||
+      address.town ||
+      address.village ||
+      address.municipality ||
+      address.county ||
+      address.state_district ||
+      address.state ||
+      "";
+
+    const country = address.country || "";
+    const countryCode = String(address.country_code || "").toUpperCase() || null;
+
+    let place = "";
+    if (locality && country && locality !== country) {
+      place = `${locality}, ${country}`;
+    } else {
+      place = locality || country || data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    }
+
+    const result = {
+      place: String(place).slice(0, 120),
+      country: country ? String(country).slice(0, 100) : null,
+      countryCode
+    };
+
+    state.geocodeCache.set(cacheKey, result);
+    return result;
+  }
+
+  function openDialog() {
     if (typeof els.dialog.showModal === "function") {
       els.dialog.showModal();
     } else {
@@ -192,6 +365,8 @@
     els.form.reset();
     els.dateInput.value = localDateValue();
     state.selectedLatLng = null;
+    state.location = null;
+    state.locationLookupPromise = null;
 
     if (typeof els.dialog.close === "function") {
       els.dialog.close();
@@ -324,7 +499,6 @@
       return;
     }
 
-    const place = safeText(els.placeInput.value, 120);
     const note = safeText(els.noteInput.value, 500);
     const spottedOn = els.dateInput.value || localDateValue();
 
@@ -333,6 +507,14 @@
     els.formMessage.textContent = "";
 
     try {
+      const location = state.locationLookupPromise
+        ? await state.locationLookupPromise
+        : state.location || {
+            place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+            country: null,
+            countryCode: null
+          };
+
       let newSpot;
 
       if (globalMode) {
@@ -361,7 +543,10 @@
         const row = {
           lat,
           lng,
-          place: place || null,
+          place: location.place || null,
+          country: location.country || null,
+          country_code: location.countryCode || null,
+          sticker_type: "nett_hier",
           note: note || null,
           spotted_on: spottedOn,
           image_url: imageUrl
@@ -370,11 +555,13 @@
         const insertResult = await db
           .from("spots")
           .insert(row)
-          .select("id, lat, lng, place, note, spotted_on, image_url, created_at")
+          .select("*")
           .single();
 
         if (insertResult.error) {
-          await db.storage.from(bucket).remove([fileName]).catch(() => {});
+          try {
+            await db.storage.from(bucket).remove([fileName]);
+          } catch {}
           throw insertResult.error;
         }
 
@@ -387,7 +574,10 @@
           id: crypto.randomUUID(),
           lat,
           lng,
-          place: place || null,
+          place: location.place || null,
+          country: location.country || null,
+          country_code: location.countryCode || null,
+          sticker_type: "nett_hier",
           note: note || null,
           spotted_on: spottedOn,
           image_url: imageUrl,
@@ -398,7 +588,7 @@
         current.unshift(newSpot);
 
         try {
-          localStorage.setItem("nett-hier-spots-v2", JSON.stringify(current));
+          localStorage.setItem("nett-hier-spots-v3", JSON.stringify(current));
         } catch {
           throw new Error(
             "This browser has run out of demo storage. Connect Supabase for shared photo storage."
@@ -407,13 +597,16 @@
       }
 
       addSpotIfNew(newSpot);
-      els.formMessage.textContent = globalMode ? "Added — it is live worldwide!" : "Added to this device.";
+      els.formMessage.textContent = globalMode
+        ? "Added — it is live worldwide!"
+        : "Added to this device.";
       els.formMessage.classList.add("success");
 
       const savedLatLng = [Number(newSpot.lat), Number(newSpot.lng)];
 
       setTimeout(() => {
         closeDialog();
+        switchView("map");
         map.setView(savedLatLng, Math.max(map.getZoom(), 11), { animate: true });
       }, 450);
     } catch (error) {
@@ -430,8 +623,11 @@
 
   function readLocalSpots() {
     try {
-      const parsed = JSON.parse(localStorage.getItem("nett-hier-spots-v2") || "[]");
-      return Array.isArray(parsed) ? parsed : [];
+      const v3 = JSON.parse(localStorage.getItem("nett-hier-spots-v3") || "[]");
+      if (Array.isArray(v3) && v3.length) return v3;
+
+      const v2 = JSON.parse(localStorage.getItem("nett-hier-spots-v2") || "[]");
+      return Array.isArray(v2) ? v2 : [];
     } catch {
       return [];
     }
@@ -502,6 +698,7 @@
     state.spots.push(spot);
     addMarker(spot);
     updateCount();
+    renderStats();
     return true;
   }
 
@@ -515,10 +712,69 @@
     }
 
     updateCount();
+    renderStats();
   }
 
   function updateCount() {
     els.spotCount.textContent = String(state.spots.length);
+  }
+
+  function renderStats() {
+    const counts = new Map();
+
+    for (const spot of state.spots) {
+      const country = safeText(spot.country, 100);
+      if (!country) continue;
+      counts.set(country, (counts.get(country) || 0) + 1);
+    }
+
+    const ranking = Array.from(counts.entries()).sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    });
+
+    els.statsTotal.textContent = String(state.spots.length);
+    els.statsCountries.textContent = String(counts.size);
+    els.statsTopCountry.textContent = ranking.length ? ranking[0][0] : "—";
+
+    els.countryRanking.replaceChildren();
+
+    if (!ranking.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent =
+        state.spots.length
+          ? "Existing sightings do not have country data yet. New sightings will be counted automatically."
+          : "No sightings yet.";
+      els.countryRanking.appendChild(empty);
+      return;
+    }
+
+    const max = ranking[0][1];
+
+    for (const [country, count] of ranking) {
+      const row = document.createElement("div");
+      row.className = "country-row";
+
+      const name = document.createElement("div");
+      name.className = "country-name";
+      name.textContent = country;
+
+      const track = document.createElement("div");
+      track.className = "country-bar-track";
+
+      const bar = document.createElement("div");
+      bar.className = "country-bar";
+      bar.style.width = `${Math.max(3, (count / max) * 100)}%`;
+      track.appendChild(bar);
+
+      const value = document.createElement("div");
+      value.className = "country-count";
+      value.textContent = String(count);
+
+      row.append(name, track, value);
+      els.countryRanking.appendChild(row);
+    }
   }
 
   function subscribeToLiveSpots() {
@@ -553,7 +809,7 @@
       if (globalMode) {
         const result = await db
           .from("spots")
-          .select("id, lat, lng, place, note, spotted_on, image_url, created_at")
+          .select("*")
           .order("created_at", { ascending: false })
           .limit(10000);
 
