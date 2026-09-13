@@ -1,0 +1,26 @@
+/* V6 account/report controls. These intentionally extend, rather than replace, the existing design. */
+button,input,textarea,select{font:inherit}
+.secondary-button:disabled{opacity:.58;cursor:wait}
+.field select{width:100%;min-height:48px;border:1px solid #d4d4d0;border-radius:12px;outline:none;padding:11px 12px;color:var(--ink);background:#fff;font-size:16px}
+.field select:focus{border-color:#8c7900;box-shadow:0 0 0 3px rgba(255,225,0,.28)}
+.account-button{min-height:38px;padding:0 12px;border:1px solid #deddd8;border-radius:999px;background:#fff;color:var(--ink);font-size:12px;font-weight:800;white-space:nowrap}
+.account-button:hover{background:#f5f4ef}
+.account-note{margin:14px 0 0;color:var(--muted);font-size:13px;line-height:1.5}
+.account-note strong{color:var(--ink);overflow-wrap:anywhere}
+.account-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.account-actions button{min-height:46px}
+.account-dialog #signedInPanel{padding-top:8px}
+.account-dialog #signOutButton{margin-top:16px}
+.popup-actions{display:grid;grid-template-columns:1fr auto;gap:7px;margin-top:10px}
+.popup-actions .popup-edit-button{margin-top:0}
+.popup-delete-button,.popup-report-button{border:0;border-radius:999px;min-height:38px;font-size:12px;font-weight:800}
+.popup-delete-button{padding:0 13px;background:#fff0ef;color:var(--danger)}
+.popup-report-button{width:100%;margin-top:10px;background:#f0efe9;color:#5f5b51}
+.report-dialog .account-note{margin-top:16px}
+[hidden]{display:none!important}
+@media (max-width:760px){
+  .account-button{min-height:38px;padding:0 9px;font-size:11px}
+  .account-actions{display:grid;grid-template-columns:1fr 1.25fr}
+  .account-actions button{min-height:48px}
+}
+@media (max-width:410px){.account-button{padding:0 7px}}
