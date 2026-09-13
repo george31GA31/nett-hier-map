@@ -1,42 +1,30 @@
-# Nett hier. Sticker Map — V5
+# Nett hier. Sticker Map — V6
 
-## New
-- Every new sighting asks for **Added by**.
-- Popups show `Added by — Name`.
-- Every existing pin now has an **Edit sighting** button.
-- Opening Edit automatically re-detects the location/country from its stored coordinates.
-- Saving an old sighting therefore adds it into the country statistics.
-- Date, note and added-by name can also be edited.
-- Live updates now listen for both new sightings and edits.
+V6 keeps the existing map, styling and stored sightings, while adding optional accounts, secure ownership, reporting and database hardening.
 
-## Upgrade steps
+## What changed
 
-1. In Supabase → SQL Editor, run `supabase_update_v4.sql`.
-2. It should say `Success. No rows returned`.
-3. Replace the GitHub versions of:
-   - `index.html`
-   - `styles.css`
-   - `app.js`
-   - `config.js`
-   - `favicon.svg`
-   - `nett-hier-sticker.webp`
-4. Commit and wait for GitHub Pages to deploy.
-5. Hard refresh the site.
+- The map still works for guests and all sightings remain publicly visible.
+- Email/password accounts are optional.
+- A sighting added while signed in is linked to that account with `owner_id`.
+- Only that owner can edit or delete it. Ownership is enforced by Supabase Row Level Security and column permissions, not just by the browser UI.
+- Existing/pre-account sightings remain ownerless, visible and protected from ordinary editing/deletion.
+- Guest-created sightings remain ownerless/protected. Sign in before plotting if you want future edit/delete control.
+- Non-owned sightings can be reported for one of the six supported reasons. `Other` allows a maximum 50-character comment.
+- Reports are stored in `spot_reports`; they do not delete or alter a sighting and are not emailed anywhere yet.
+- Duplicate reports for the same point are limited to one per signed-in account or one per browser guest token.
+- Country statistics only recognise the agreed 198 codes: 193 UN member states plus Vatican City, Palestine, Taiwan, Kosovo and Western Sahara.
+- Photo uploads remain public/free but are restricted to the existing JPEG bucket, 6 MB bucket limit and generated `.jpg` filename pattern.
+- The browser uses the Supabase publishable key only; no privileged service key is exposed.
 
-## Important editing note
+## Deploy / upgrade
 
-There is no account/login system yet, so the Edit button is public. That means
-any visitor can edit the metadata on any pin. Image deletion/replacement is not
-enabled through the edit form.
+The live project needs the database migration in `supabase_update_v6.sql` applied once, then the V6 frontend files can be deployed.
 
-A later version can restrict editing to an admin account or to the person who
-created the sighting.
+For a clean Supabase setup, use the base `supabase.sql` and then apply `supabase_update_v6.sql`.
 
+## Important ownership behaviour
 
-## V5 sticker rule
-The Stickers tab now makes the rule explicit: only the yellow oval design in
-the standard format counts, either with the German wording
-“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?” or the matching
-English translation “Not bad. But have you ever been to Baden-Württemberg?”.
+Older sightings deliberately have `owner_id = NULL`. They are not assigned to anyone retrospectively because there is no reliable way to prove who originally created them.
 
-The supplied English example is included as `nett-hier-english.webp`.
+If an account is later deleted, its owned sightings are kept and become ownerless/protected rather than being deleted.

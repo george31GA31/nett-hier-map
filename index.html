@@ -7,6 +7,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta
     name="description"
     content="Plot sightings of Nett hier. Aber waren Sie schon mal in Baden-Württemberg? stickers around the world."
@@ -20,6 +21,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="v6.css?v=6" />
 </head>
 <body>
   <header class="site-header">
@@ -31,6 +33,7 @@
     </button>
 
     <div class="header-actions">
+      <button id="accountButton" class="account-button" type="button">Sign in</button>
       <div class="spot-count" aria-live="polite">
         <strong id="spotCount">0</strong>
         <span>sightings</span>
@@ -226,10 +229,85 @@
     </form>
   </dialog>
 
+  <dialog id="accountDialog" class="sighting-dialog account-dialog">
+    <form id="accountForm">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">ACCOUNT</p>
+          <h1>Sign in</h1>
+        </div>
+        <button class="icon-button" id="closeAccountDialog" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div id="accountFields">
+        <p class="account-note">
+          You can keep using the map as a guest. Sign in before adding a sighting if you want to edit or delete that sighting later.
+        </p>
+        <label class="field">
+          <span>Email</span>
+          <input id="accountEmail" name="email" type="email" maxlength="254" autocomplete="email" required />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input id="accountPassword" name="password" type="password" minlength="6" maxlength="128" autocomplete="current-password" required />
+        </label>
+        <div class="account-actions">
+          <button id="signUpButton" class="secondary-button" type="button">Create account</button>
+          <button id="signInButton" class="primary-button" type="submit">Sign in</button>
+        </div>
+      </div>
+
+      <div id="signedInPanel" hidden>
+        <p class="account-note">Signed in as <strong id="signedInEmail"></strong></p>
+        <button id="signOutButton" class="secondary-button" type="button">Sign out</button>
+      </div>
+
+      <p id="accountMessage" class="form-message" aria-live="polite"></p>
+    </form>
+  </dialog>
+
+  <dialog id="reportDialog" class="sighting-dialog report-dialog">
+    <form id="reportForm">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">REPORT SIGHTING</p>
+          <h1>Report this point</h1>
+        </div>
+        <button class="icon-button" id="closeReportDialog" type="button" aria-label="Close">×</button>
+      </div>
+
+      <label class="field">
+        <span>Reason <b>*</b></span>
+        <select id="reportReason" name="reason" required>
+          <option value="">Choose a reason</option>
+          <option>Not there anymore</option>
+          <option>Wrong location</option>
+          <option>Wrong variation of the Nett Hier / Not Bad sticker</option>
+          <option>Inappropriate</option>
+          <option>Too damaged</option>
+          <option>Other</option>
+        </select>
+      </label>
+
+      <label id="otherReportField" class="field" hidden>
+        <span>Other</span>
+        <input id="reportComment" name="comment" type="text" maxlength="50" placeholder="Up to 50 characters" />
+      </label>
+
+      <p class="account-note">Submitting a report does not automatically delete or change the sighting.</p>
+      <p id="reportMessage" class="form-message" aria-live="polite"></p>
+
+      <div class="dialog-actions">
+        <button id="cancelReport" class="secondary-button" type="button">Cancel</button>
+        <button id="submitReport" class="primary-button" type="submit">Submit report</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="config.js?v=5"></script>
-  <script src="app.js?v=5"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
+  <script src="config.js?v=6"></script>
+  <script src="app-v6.js?v=6"></script>
 </body>
 </html>
