@@ -9,7 +9,7 @@
     content="A world map of Nett hier. Aber waren Sie schon mal in Baden-Württemberg? sticker sightings."
   />
   <title>Nett hier. Sticker Map</title>
-  <link rel="icon" href="favicon.svg?v=2" type="image/svg+xml" />
+  <link rel="icon" href="favicon.svg?v=3" type="image/svg+xml" />
 
   <!-- The only things loaded from the internet are the map library and map tiles. -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -719,7 +719,7 @@ button {
 
   const markerLayer = L.markerClusterGroup({
     showCoverageOnHover: false,
-    maxClusterRadius: 45,
+    maxClusterRadius: 18,
     spiderfyOnMaxZoom: true
   });
   map.addLayer(markerLayer);
