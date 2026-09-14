@@ -80,20 +80,18 @@
     return;
   }
 
-  const WORLD_BOUNDS = L.latLngBounds([-85.0511, -180], [85.0511, 180]);
   const map = L.map("map", {
-    minZoom: 2, maxZoom: 19, zoomControl: true, worldCopyJump: false,
-    maxBounds: WORLD_BOUNDS, maxBoundsViscosity: 0.9
+    minZoom: 2, maxZoom: 19, zoomControl: true, worldCopyJump: true
   }).setView([22, 7], 2);
 
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    minZoom: 2, maxZoom: 19, noWrap: true, bounds: WORLD_BOUNDS,
+    minZoom: 2, maxZoom: 19,
     updateWhenIdle: true, keepBuffer: 2,
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
   const markerLayer = L.markerClusterGroup({
-    showCoverageOnHover: false, maxClusterRadius: 45, removeOutsideVisibleBounds: true
+    showCoverageOnHover: false, maxClusterRadius: 18, removeOutsideVisibleBounds: true
   });
   map.addLayer(markerLayer);
 
