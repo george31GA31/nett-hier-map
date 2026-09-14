@@ -1,5 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Nett hier">
-  <rect width="64" height="64" fill="#fff"/>
   <ellipse cx="32" cy="32" rx="31" ry="18" fill="#ffe100"/>
   <g fill="#000" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif">
     <text x="32" y="29.5" font-size="16" font-weight="700">Nett</text>
