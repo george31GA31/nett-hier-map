@@ -1,4 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#ffe100"/>
-  <path d="M17 46V18h8l14 18V18h8v28h-8L25 28v18z" fill="#171717"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Nett hier">
+  <rect width="64" height="64" fill="#fff"/>
+  <ellipse cx="32" cy="32" rx="31" ry="18" fill="#ffe100"/>
+  <g fill="#000" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif">
+    <text x="32" y="29.5" font-size="16" font-weight="700">Nett</text>
+    <text x="32" y="45.5" font-size="16" font-weight="700">hier.</text>
+  </g>
 </svg>
