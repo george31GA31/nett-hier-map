@@ -1,0 +1,17 @@
+.sticker-carousel { grid-template-columns: minmax(260px, 42%) minmax(0, 1fr); }
+.sticker-gallery, .sticker-copy { min-width: 0; }
+.sticker-gallery-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; gap: 4px; }
+.sticker-frames figure { margin: 0; }
+.sticker-carousel [hidden] { display: none !important; }
+.sticker-carousel .sticker-frames img { width: 100%; height: 290px; max-height: none; object-fit: contain; border-radius: 0; }
+.sticker-frames figcaption { margin-top: 14px; min-height: 34px; text-align: center; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.sticker-arrow { display: grid; place-items: center; width: 44px; min-height: 48px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--ink); font: 44px/1 Georgia, serif; }
+.sticker-arrow:hover { background: #fff5a6; }
+.sticker-arrow:focus-visible { outline: 3px solid #786800; outline-offset: 2px; }
+.sticker-carousel .sticker-position { margin-top: 8px; text-align: center; color: var(--muted); font-size: 11px; }
+.sticker-carousel .sticker-guidance { margin-top: 20px !important; padding-top: 16px; border-top: 1px solid var(--line); }
+@media (max-width: 760px) {
+  .sticker-carousel { grid-template-columns: minmax(0, 1fr); }
+  .sticker-gallery { width: 100%; max-width: 440px; margin-inline: auto; }
+  .sticker-carousel .sticker-frames img { height: 240px; }
+}

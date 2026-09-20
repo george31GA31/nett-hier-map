@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="styles.css?v=5" />
   <link rel="stylesheet" href="v6.css?v=6" />
+  <link rel="stylesheet" href="sticker-carousel.css?v=1" />
 </head>
 <body>
   <header class="site-header">
@@ -120,31 +121,60 @@
           <p>This page sets out which sticker sightings belong on the map — and how to place them accurately.</p>
         </div>
 
-        <article class="sticker-guide-card">
-          <div class="sticker-examples">
-            <figure>
-              <img src="nett-hier-sticker.webp" alt="German yellow Nett hier sticker" />
-              <figcaption>German original</figcaption>
-            </figure>
-            <figure>
-              <img src="nett-hier-english.webp" alt="English yellow Not bad sticker" />
-              <figcaption>English version</figcaption>
-            </figure>
+        <article class="sticker-guide-card sticker-carousel" aria-label="Accepted stickers" aria-roledescription="carousel">
+          <div class="sticker-gallery">
+            <div class="sticker-gallery-row">
+              <button class="sticker-arrow" id="stickerPrevious" type="button" aria-label="Previous accepted sticker">‹</button>
+              <div class="sticker-frames">
+                <figure data-sticker-slide="0">
+                  <img src="nett-hier-sticker.webp" alt="Yellow oval German Nett hier sticker" width="360" height="290" />
+                  <figcaption>German original</figcaption>
+                </figure>
+                <figure data-sticker-slide="1" hidden>
+                  <img src="nett-hier-english.webp" alt="Yellow oval English Not bad sticker" width="360" height="290" />
+                  <figcaption>English version</figcaption>
+                </figure>
+                <figure data-sticker-slide="2" hidden>
+                  <img src="sticker-the-laend.png" alt="Round yellow THE LÄND sticker with Baden-Württemberg coat of arms" width="360" height="290" />
+                  <figcaption>THE LÄND · round</figcaption>
+                </figure>
+                <figure data-sticker-slide="3" hidden>
+                  <img src="sticker-part-of-the-laend.png" alt="Yellow Baden-Württemberg-shaped THE LÄND sticker" width="360" height="290" />
+                  <figcaption>THE LÄND · state outline</figcaption>
+                </figure>
+                <figure data-sticker-slide="4" hidden>
+                  <img src="sticker-nett-hier-pale.png" alt="Pale-yellow oval Nett hier sticker with social media details" width="360" height="290" />
+                  <figcaption>German · pale-yellow version</figcaption>
+                </figure>
+              </div>
+              <button class="sticker-arrow" id="stickerNext" type="button" aria-label="Next accepted sticker">›</button>
+            </div>
+            <p id="stickerPosition" class="sticker-position" role="status" aria-live="polite" aria-atomic="true">1 of 5 · German original</p>
           </div>
-          <div>
+          <div class="sticker-copy">
             <span class="accepted-pill">Accepted</span>
             <h2>Which stickers count?</h2>
-            <p>
-              Only the <strong>yellow oval sticker in this same format</strong> is accepted:
-              either the German original reading
-              <strong>“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”</strong>
-              or the English translation
-              <strong>“Not bad. But have you ever been to Baden-Württemberg?”</strong>.
-            </p>
-            <p class="muted-copy">
-              Other colours, shapes, redesigns, parodies or unrelated Baden-Württemberg stickers
-              should not be plotted.
-            </p>
+            <div data-sticker-description="0">
+              <p>Yellow oval sticker, German original reading <strong>“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”</strong>.</p>
+              <p class="muted-copy">Features the Baden-Württemberg coat of arms beneath the slogan.</p>
+            </div>
+            <div data-sticker-description="1" hidden>
+              <p>Yellow oval sticker, English version reading <strong>“Not bad. But have you ever been to Baden-Württemberg?”</strong>.</p>
+              <p class="muted-copy">The English-language counterpart to the German original, with Baden-Württemberg branding underneath.</p>
+            </div>
+            <div data-sticker-description="2" hidden>
+              <p>Round yellow sticker with bold black <strong>“THE LÄND”</strong> lettering.</p>
+              <p class="muted-copy">Features the Baden-Württemberg coat of arms and the words “Baden-Württemberg THE LÄND” below.</p>
+            </div>
+            <div data-sticker-description="3" hidden>
+              <p>Yellow sticker shaped like <strong>Baden-Württemberg</strong>, with bold black <strong>“THE LÄND”</strong> lettering.</p>
+              <p class="muted-copy">This state-outline design is accepted alongside the round and oval stickers shown here.</p>
+            </div>
+            <div data-sticker-description="4" hidden>
+              <p>Pale-yellow oval sticker reading <strong>“Nett hier. Aber waren Sie schon mal in Baden-Württemberg?”</strong>.</p>
+              <p class="muted-copy">Features the coat of arms, “Wir können alles. Außer Hochdeutsch.” and BWjetzt website and social media details along the bottom.</p>
+            </div>
+            <p class="muted-copy sticker-guidance">All five designs shown here are accepted. Use the arrows to browse them. Other designs, parodies or unrelated stickers should not be plotted.</p>
           </div>
         </article>
 
@@ -325,5 +355,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
   <script src="config.js?v=6"></script>
   <script src="app-v6.js?v=7"></script>
+  <script src="sticker-carousel.js?v=1"></script>
 </body>
 </html>
+
