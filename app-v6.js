@@ -90,15 +90,27 @@
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
-  const markerLayer = L.markerClusterGroup({
-    showCoverageOnHover: false, maxClusterRadius: 18, removeOutsideVisibleBounds: true
-  });
-  map.addLayer(markerLayer);
+  // One marker per sighting at every zoom level, including overlapping positions.
+  const markerLayer = L.layerGroup().addTo(map);
+  const markerEntries = new Map();
+  let markerRenderFrame = 0;
+  let popupSelection = null;
 
   const markerIcon = L.divIcon({
-    className: "",
-    html: '<div class="nett-marker"><span>N</span></div>',
-    iconSize: [31,31], iconAnchor: [15,30], popupAnchor: [0,-29]
+    className: "nett-marker-icon",
+    html: "",
+    // The 20px pin sits inside a larger, invisible click target. Its tip is at [18,36].
+    iconSize: [36,42], iconAnchor: [18,36]
+  });
+  const sightingPopup = L.popup({ maxWidth: 250, autoPanPadding: [24,24], offset: [0,-30] });
+  sightingPopup.on("remove", () => {
+    setSelectedMarker(popupSelection?.id, false);
+    popupSelection = null;
+    els.mapShell.classList.remove("sighting-open");
+  });
+  map.on("zoomend", () => {
+    const entry = markerEntries.get(popupSelection?.id);
+    if (entry) showSighting(entry.spot.id, overlappingSightingIds(entry));
   });
 
   const resizeMap = () => requestAnimationFrame(() => map.invalidateSize({ pan: false }));
@@ -500,11 +512,13 @@
     }
   });
 
+  const sightingDateFormat = new Intl.DateTimeFormat(undefined, {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC"
+  });
   function formatDate(value) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return "Date not supplied";
     const [y,m,d] = value.split("-").map(Number);
-    return new Intl.DateTimeFormat(undefined, { day:"numeric", month:"short", year:"numeric", timeZone:"UTC" })
-      .format(new Date(Date.UTC(y,m-1,d)));
+    return sightingDateFormat.format(new Date(Date.UTC(y,m-1,d)));
   }
 
   function friendlyError(err, fallback) {
@@ -619,11 +633,16 @@
     const card = document.createElement("div");
     card.className = "popup-card";
 
-    const img = document.createElement("img");
-    img.src = spot.image_url;
-    img.alt = spot.place ? `Sticker sighting in ${spot.place}` : "Sticker sighting";
-    img.loading = "lazy";
-    card.appendChild(img);
+    if (spot.image_url) {
+      const img = document.createElement("img");
+      img.alt = spot.place ? `Sticker sighting in ${spot.place}` : "Sticker sighting";
+      img.loading = "lazy";
+      img.addEventListener("load", () => {
+        if (sightingPopup.getContent() === card) sightingPopup.update();
+      });
+      img.src = spot.image_url;
+      card.appendChild(img);
+    }
 
     const title = document.createElement("strong");
     title.textContent = spot.place || "Nett hier. spotted here";
@@ -681,15 +700,163 @@
     return card;
   }
 
-  function renderMarkers() {
-    markerLayer.clearLayers();
-    state.spots.forEach(spot => {
-      const lat = Number(spot.lat), lng = Number(spot.lng);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng) || !spot.image_url) return;
-      const marker = L.marker([lat,lng], { icon: markerIcon });
-      marker.bindPopup(buildPopup(spot), { maxWidth: 250, autoPanPadding: [24,24] });
-      markerLayer.addLayer(marker);
+  function markerPosition(spot) {
+    if (spot.lat == null || spot.lng == null || String(spot.lat).trim() === "" || String(spot.lng).trim() === "") return null;
+    const lat = Number(spot.lat), lng = Number(spot.lng);
+    return Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+      ? L.latLng(lat, lng) : null;
+  }
+
+  function updateMarkerLabel(entry) {
+    const label = `Open sticker sighting: ${entry.spot.place || "Nett hier. spotted here"}`;
+    entry.marker.options.title = label;
+    const icon = entry.marker.getElement();
+    if (icon) {
+      icon.title = label;
+      icon.setAttribute("aria-label", label);
+    }
+  }
+
+  function setSelectedMarker(id, selected) {
+    const marker = markerEntries.get(id)?.marker;
+    if (!marker) return;
+    marker.getElement()?.classList.toggle("is-selected", selected);
+    marker.setZIndexOffset(selected ? 1000 : 0);
+  }
+
+  function overlappingSightingIds(entry) {
+    const origin = map.latLngToLayerPoint(entry.marker.getLatLng());
+    const ids = [entry.spot.id];
+    const coarse = matchMedia("(pointer: coarse)").matches;
+    // Compare screen-space targets, never change or spread stored coordinates.
+    const width = coarse ? 44 : 36, height = coarse ? 50 : 42;
+    markerEntries.forEach(other => {
+      if (other === entry) return;
+      const point = map.latLngToLayerPoint(other.marker.getLatLng());
+      if (Math.abs(point.x - origin.x) < width && Math.abs(point.y - origin.y) < height) ids.push(other.spot.id);
     });
+    return ids;
+  }
+
+  function showSighting(id, ids, focusControl) {
+    const entry = markerEntries.get(id);
+    if (!entry) return;
+    ids = ids.filter(candidate => markerEntries.has(candidate));
+    setSelectedMarker(popupSelection?.id, false);
+    popupSelection = { id, ids };
+    setSelectedMarker(id, true);
+    els.mapShell.classList.add("sighting-open");
+
+    // Build only the open popup, including its photo and current ownership actions.
+    const card = buildPopup(entry.spot);
+    if (ids.length > 1) {
+      const navigation = document.createElement("div");
+      navigation.className = "popup-sighting-navigation";
+      const label = document.createElement("label");
+      label.htmlFor = "nearbySighting";
+      label.textContent = "Nearby sightings";
+      const select = document.createElement("select");
+      select.id = "nearbySighting";
+      ids.forEach((candidate, index) => {
+        const spot = markerEntries.get(candidate).spot;
+        const option = document.createElement("option");
+        option.value = candidate;
+        option.textContent = `${index + 1}. ${spot.place || "Sticker sighting"} · ${formatDate(spot.spotted_on)} · ${spot.added_by || "Unknown"}`;
+        select.appendChild(option);
+      });
+      select.value = id;
+      select.addEventListener("change", () => showSighting(select.value, ids, "select"));
+
+      const controls = document.createElement("div");
+      controls.className = "popup-sighting-controls";
+      const index = ids.indexOf(id);
+      const position = document.createElement("span");
+      position.setAttribute("role", "status");
+      position.setAttribute("aria-live", "polite");
+      position.textContent = `${index + 1} of ${ids.length}`;
+      const previous = document.createElement("button");
+      previous.type = "button";
+      previous.textContent = "‹";
+      previous.dataset.direction = "previous";
+      previous.setAttribute("aria-label", "Previous nearby sighting");
+      previous.addEventListener("click", () => showSighting(ids[(index - 1 + ids.length) % ids.length], ids, "previous"));
+      const next = document.createElement("button");
+      next.type = "button";
+      next.textContent = "›";
+      next.dataset.direction = "next";
+      next.setAttribute("aria-label", "Next nearby sighting");
+      next.addEventListener("click", () => showSighting(ids[(index + 1) % ids.length], ids, "next"));
+      controls.append(previous, position, next);
+      const hint = document.createElement("p");
+      hint.textContent = "Zoom in to separate nearby pins. Sightings at the same spot can be browsed here.";
+      navigation.append(label, select, controls, hint);
+      card.prepend(navigation);
+    }
+
+    sightingPopup.options.maxHeight = Math.max(160, map.getSize().y - 90);
+    sightingPopup.setLatLng(entry.marker.getLatLng()).setContent(card).openOn(map);
+    if (focusControl) {
+      const control = focusControl === "select" ? "select" : `[data-direction="${focusControl}"]`;
+      card.querySelector(control)?.focus({ preventScroll: true });
+    }
+  }
+
+  function refreshSightingPopup() {
+    if (!popupSelection) return;
+    const entry = markerEntries.get(popupSelection.id)
+      || markerEntries.get(popupSelection.ids.find(id => markerEntries.has(id)));
+    if (entry) showSighting(entry.spot.id, overlappingSightingIds(entry));
+    else map.closePopup(sightingPopup);
+  }
+
+  function renderMarkers() {
+    cancelAnimationFrame(markerRenderFrame);
+    const retainedIds = new Set();
+    const pending = [];
+    state.spots.forEach(spot => {
+      const position = markerPosition(spot);
+      if (!spot.id || !position || retainedIds.has(spot.id)) return;
+      retainedIds.add(spot.id);
+      const entry = markerEntries.get(spot.id);
+      if (entry) {
+        const changed = entry.spot !== spot;
+        entry.spot = spot;
+        if (!entry.marker.getLatLng().equals(position, 0)) entry.marker.setLatLng(position);
+        if (changed) updateMarkerLabel(entry);
+      } else {
+        pending.push({ spot, position });
+      }
+    });
+    markerEntries.forEach((entry, id) => {
+      if (retainedIds.has(id)) return;
+      markerLayer.removeLayer(entry.marker);
+      markerEntries.delete(id);
+    });
+
+    // Yield between small batches on the initial load. Existing pins keep their DOM
+    // nodes, so realtime echoes, edits and sign-in changes do not redraw the map.
+    let index = 0;
+    function addBatch() {
+      const started = performance.now();
+      while (index < pending.length && performance.now() - started < 8) {
+        const { spot, position } = pending[index++];
+        const marker = L.marker(position, { icon: markerIcon, riseOnHover: true });
+        const entry = { spot, marker };
+        markerEntries.set(spot.id, entry);
+        const open = () => showSighting(entry.spot.id, overlappingSightingIds(entry));
+        marker.on("click", open);
+        marker.on("keydown", event => {
+          if (event.originalEvent?.key !== "Enter" && event.originalEvent?.key !== " ") return;
+          L.DomEvent.stop(event.originalEvent);
+          open();
+        });
+        markerLayer.addLayer(marker);
+        updateMarkerLabel(entry);
+      }
+      markerRenderFrame = index < pending.length ? requestAnimationFrame(addBatch) : 0;
+      if (!markerRenderFrame) refreshSightingPopup();
+    }
+    addBatch();
     updateCount();
     renderStats();
   }
