@@ -24,3 +24,33 @@ button,input,textarea,select{font:inherit}
   .account-actions button{min-height:48px}
 }
 @media (max-width:410px){.account-button{padding:0 7px}}
+.sighting-popup .leaflet-popup-content { width:auto!important; max-width:calc(100vw - 76px); overflow-x:hidden; overscroll-behavior:contain; }
+.sighting-popup .popup-card { width:260px; max-width:100%; box-sizing:border-box; min-width:0; overflow-wrap:anywhere; }
+.sighting-popup .popup-sighting-navigation { min-width:0; }
+.sighting-popup select { display:block; min-width:0; max-width:100%; box-sizing:border-box; text-overflow:ellipsis; }
+.sighting-popup .popup-sighting-controls { display:grid; grid-template-columns:44px minmax(0,1fr) 44px; }
+.sighting-popup .popup-sighting-controls span { text-align:center; }
+.sighting-popup .popup-sighting-controls button { flex-shrink:0; }
+.sighting-popup .leaflet-popup-scrolled { border:0; overflow-y:auto; overflow-x:hidden; padding-right:4px; }
+.privacy-consent { margin-top:18px; padding:12px; background:#fffbe4; border-radius:12px; font-size:13px; line-height:1.5; }
+.privacy-consent label { display:flex; align-items:flex-start; gap:9px; }
+.privacy-consent input { margin-top:4px; flex-shrink:0; }
+.privacy-consent p { margin:8px 0 0; color:var(--muted); }
+.captcha-box { margin-top:15px; min-height:65px; max-width:100%; color:var(--muted); font-size:13px; }
+.site-footer { display:flex; justify-content:center; align-items:center; gap:14px; padding:5px 12px; background:var(--paper,#f8f7f1); font-size:11px; }
+.site-footer a { color:var(--muted); }
+.app-main { min-height:0; }
+.sighting-cluster { display:grid; place-items:center; border-radius:50%; background:#ffe100; color:#181818; border:2px solid #222; box-shadow:0 2px 5px #0003; font-weight:800; }
+.account-actions { flex-wrap:wrap; }
+.moderation-report { margin-top:16px; padding-block:16px; border-top:1px solid var(--line); overflow-wrap:anywhere; }
+.moderation-report img { display:block; width:100%; max-height:240px; object-fit:contain; margin-block:12px; }
+.moderation-report button { margin:3px; padding:8px 12px; }
+.privacy-page { display:block; height:auto; min-height:100dvh; overflow:auto; padding:24px; }
+.privacy-wrap { max-width:720px; margin:0 auto; line-height:1.6; }
+.privacy-wrap h1 { font-family:Georgia,serif; }
+.privacy-wrap a { color:inherit; text-decoration:underline; }
+@media(max-width:420px){.account-actions{display:flex}.account-actions button{flex:1 1 120px;font-size:12px}}
+.map-shell.sighting-open .location-button { visibility:hidden; }
+.sighting-reference { display:block; margin-top:8px; color:var(--muted); font-size:10px; }
+#moderationDialog { padding:24px; }
+.privacy-page { height:100dvh; overflow-y:auto; }

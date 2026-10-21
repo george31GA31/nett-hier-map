@@ -1,0 +1,23 @@
+name: Photo cleanup and moderation alerts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+permissions:
+  contents: read
+jobs:
+  monitor:
+    # Enable explicitly after the migration, secrets and owner UUID are configured.
+    if: vars.LAUNCH_OPERATIONS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python ops/monitor.py
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          OPERATIONS_TOKEN: ${{ secrets.OPERATIONS_TOKEN }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
