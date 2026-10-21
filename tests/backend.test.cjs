@@ -190,3 +190,11 @@ test('server strips JPEG metadata and rejects oversized dimensions and invalid i
  assert.throws(()=>testPhotoLogic.sanitizeJpeg(huge),/4000 pixels/);
  assert.throws(()=>testPhotoLogic.sanitizeJpeg(new Uint8Array([255,216,255,217])),/JPEG/);
 });
+
+test('scheduled housekeeping prunes network hashes even when no photo needs deleting',async()=>{
+ await sql("insert into private.quotas(scope,bucket,used) values('expired-network-hash',now()-interval '3 days',1)");
+ await sql("insert into private.geocode_cache(cache_key,result,expires_at) values('expired-cache','{}',now()-interval '1 day')");
+ await rpc('nh_cleanup_candidates');
+ assert.equal((await sql("select * from private.quotas where scope='expired-network-hash'")).length,0);
+ assert.equal((await sql("select * from private.geocode_cache where cache_key='expired-cache'")).length,0);
+});

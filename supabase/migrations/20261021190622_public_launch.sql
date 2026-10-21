@@ -185,6 +185,9 @@ create trigger nh_spot_photo_cleanup after delete on public.spots for each row e
 create function public.nh_cleanup_candidates() returns table(path text)
 language plpgsql security definer set search_path='' as $$
 begin
+ -- Housekeeping must run even when no photo needs deleting.
+ delete from private.quotas where bucket<now()-interval '2 days';
+ delete from private.geocode_cache where expires_at<now();
  -- Only managed uploads are auto-cleaned; historic unreferenced photos need review.
  insert into private.photo_cleanup(path)
  select p.path from private.managed_photos p where not p.committed and p.created_at<now()-interval '1 hour'
@@ -201,8 +204,6 @@ begin
    delete from private.photo_cleanup where path=photo;
    delete from private.managed_photos where path=photo;
  else update private.photo_cleanup set attempts=attempts+1,last_error=left(failure,300) where path=photo; end if;
- delete from private.quotas where bucket<now()-interval '2 days';
- delete from private.geocode_cache where expires_at<now();
 end $$;
 
 create function public.nh_is_moderator(account_id uuid) returns boolean
