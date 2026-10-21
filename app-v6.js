@@ -1,8 +1,12 @@
 (() => {
   "use strict";
 
+  const initialUrl = new URL(location.href);
+  const initialHash = new URLSearchParams(initialUrl.hash.slice(1));
+  const initialAuth = {type:initialHash.get("type")||initialUrl.searchParams.get("type"),error:initialHash.get("error_code")||initialHash.get("error")||initialUrl.searchParams.get("error_code")||initialUrl.searchParams.get("error"),hasToken:initialHash.has("access_token")||initialUrl.searchParams.has("code")};
   const config = window.NETT_HIER_CONFIG || {};
   const key = String(config.supabasePublishableKey || config.supabaseAnonKey || "").trim();
+  const PRODUCTION_URL = "https://george31ga31.github.io/nett-hier-map/";
   const live = Boolean(config.supabaseUrl && key && window.supabase);
   const db = live ? window.supabase.createClient(config.supabaseUrl, key, {
     auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
@@ -40,6 +44,10 @@
     realtimeChannel: null,
     authSubscription: null,
     user: null,
+    stats: null,
+    mapLoad: 0,
+    backendConfig: null,
+    recovery: false,
     geocodeCache: new Map(),
     localCreatedSpotIds: loadLocalCreatedSpotIds(),
     reporterToken: getOrCreateReporterToken()
@@ -102,7 +110,8 @@
     // The 20px pin sits inside a larger, invisible click target. Its tip is at [18,36].
     iconSize: [36,42], iconAnchor: [18,36]
   });
-  const sightingPopup = L.popup({ maxWidth: 250, autoPanPadding: [24,24], offset: [0,-30] });
+  const clusterLayer = L.layerGroup().addTo(map);
+  const sightingPopup = L.popup({ maxWidth: 300, minWidth: 180, className: "sighting-popup", autoPanPadding: [16,16], offset: [0,-30] });
   sightingPopup.on("remove", () => {
     setSelectedMarker(popupSelection?.id, false);
     popupSelection = null;
@@ -112,8 +121,18 @@
     const entry = markerEntries.get(popupSelection?.id);
     if (entry) showSighting(entry.spot.id, overlappingSightingIds(entry));
   });
+  let reloadTimer;
+  map.on("moveend", () => {
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(loadViewport, 200);
+  });
 
-  const resizeMap = () => requestAnimationFrame(() => map.invalidateSize({ pan: false }));
+  const resizeMap = () => requestAnimationFrame(() => {
+    map.invalidateSize({ pan: false });
+    sightingPopup.options.maxWidth = Math.min(300, Math.max(180, map.getSize().x - 56));
+    sightingPopup.options.maxHeight = Math.max(120, map.getSize().y - 85);
+    if (sightingPopup.isOpen()) sightingPopup.update();
+  });
   addEventListener("resize", resizeMap, { passive: true });
   addEventListener("orientationchange", () => setTimeout(resizeMap, 180), { passive: true });
   if (window.ResizeObserver) new ResizeObserver(resizeMap).observe(els.mapShell);
@@ -244,26 +263,8 @@
     const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (state.geocodeCache.has(cacheKey)) return state.geocodeCache.get(cacheKey);
 
-    const url = new URL("https://nominatim.openstreetmap.org/reverse");
-    url.searchParams.set("format", "jsonv2");
-    url.searchParams.set("lat", String(lat));
-    url.searchParams.set("lon", String(lng));
-    url.searchParams.set("zoom", "10");
-    url.searchParams.set("addressdetails", "1");
-    url.searchParams.set("accept-language", navigator.language || "en");
-
-    const res = await fetch(url.toString(), { headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`Location lookup failed (${res.status})`);
-    const data = await res.json();
-    const a = data.address || {};
-    const locality = a.city || a.town || a.village || a.municipality || a.county || a.state_district || a.state || "";
-    const country = a.country || "";
-    const countryCode = normalizeCountryCode(a.country_code);
-    const place = locality && country && locality !== country
-      ? `${locality}, ${country}`
-      : (locality || country || data.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-
-    const result = { place: safeText(place, 120), country: safeText(country, 100) || null, countryCode };
+    const result = await api({action:"geocode",lat,lng});
+    result.countryCode = normalizeCountryCode(result.countryCode);
     state.geocodeCache.set(cacheKey, result);
     return result;
   }
@@ -302,8 +303,12 @@
     els.coordinateText.textContent = fromDevice
       ? `Using your device location: ${lat.toFixed(5)}, ${lng.toFixed(5)}.`
       : `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
+    $("publicConsent").checked = false;
+    $("publicConsentWrap").hidden = false;
+    $("publicConsent").required = true;
     beginLocationLookup(lat, lng);
     openDialog();
+    renderCaptcha("sightingCaptcha");
   }
 
   function signedInUserId() {
@@ -339,7 +344,11 @@
     els.photoPreview.src = spot.image_url;
     els.photoPreviewWrap.hidden = !spot.image_url;
 
-    beginLocationLookup(Number(spot.lat), Number(spot.lng));
+    $("publicConsentWrap").hidden = true;
+    $("publicConsent").required = false;
+    state.location = {place:spot.place,country:spot.country,countryCode:spot.country_code};
+    state.locationLookupPromise = null;
+    els.detectedLocation.textContent = spot.place || "Coordinates saved";
     openDialog();
   }
 
@@ -426,7 +435,7 @@
 
     const addedBy = safeText(els.addedByInput.value, 80);
     if (!addedBy) {
-      els.formMessage.textContent = "Please enter your name.";
+      els.formMessage.textContent = "Please enter a public nickname.";
       return;
     }
 
@@ -459,15 +468,8 @@
         const spot = state.spots.find(s => s.id === state.editingId);
         if (!spot || !isOwnedByCurrentUser(spot)) throw new Error("You can only edit your own sightings.");
 
-        const result = await db
-          .from("spots")
-          .update(common)
-          .eq("id", state.editingId)
-          .eq("owner_id", signedInUserId())
-          .select("*")
-          .single();
-
-        if (result.error) throw result.error;
+        const saved = await api({action:"edit",id:state.editingId,lat,lng,...common});
+        const result = {data:saved};
         replaceSpot(result.data);
         els.formMessage.textContent = "Updated!";
         els.formMessage.classList.add("success");
@@ -476,23 +478,16 @@
 
         const compressed = await imageToBlob(file);
         if (compressed.size > 6 * 1024 * 1024) throw new Error("That image is still too large after processing.");
-        const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
-        const bucket = config.photoBucket || "sticker-photos";
-        const upload = await db.storage.from(bucket).upload(fileName, compressed, {
-          contentType: "image/jpeg", cacheControl: "31536000", upsert: false
-        });
-        if (upload.error) throw upload.error;
-        const imageUrl = db.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
-
-        const result = await db.from("spots").insert({
-          lat, lng, ...common,
-          sticker_type: "nett_hier",
-          image_url: imageUrl,
-          owner_id: signedInUserId()
-        }).select("*").single();
-        if (result.error) throw result.error;
+        if (!$("publicConsent").checked) throw new Error("Please confirm that you understand this sighting will be public.");
+        const captchaToken = takeCaptcha("sightingCaptcha");
+        const payload = {action:"sighting",requestId:crypto.randomUUID(),lat,lng,...common,captchaToken};
+        const form = new FormData();
+        form.set("payload",JSON.stringify(payload));
+        form.set("photo",compressed,"sighting.jpg");
+        const result = {data:await api(form)};
         rememberLocallyCreatedSpot(result.data.id);
         upsertSpot(result.data);
+        loadStats();
 
         els.formMessage.textContent = "Added — it is live worldwide!";
         els.formMessage.classList.add("success");
@@ -536,18 +531,12 @@
     if (!confirm("Delete this sighting? This cannot be undone.")) return;
 
     try {
-      const result = await db
-        .from("spots")
-        .delete()
-        .eq("id", spot.id)
-        .eq("owner_id", signedInUserId())
-        .select("id");
-      if (result.error) throw result.error;
-      if (!result.data?.length) throw new Error("You do not have permission to delete that sighting.");
+      await api({action:"delete",id:spot.id});
       removeSpot(spot.id);
       forgetLocallyCreatedSpot(spot.id);
       map.closePopup();
       setStatus("Sighting deleted", true);
+      loadStats();
     } catch (err) {
       console.error(err);
       setStatus(friendlyError(err, "Could not delete that sighting."));
@@ -566,6 +555,7 @@
     els.submitReport.textContent = "Submit report";
     if (typeof els.reportDialog.showModal === "function") els.reportDialog.showModal();
     else els.reportDialog.setAttribute("open", "");
+    renderCaptcha("reportCaptcha");
   }
 
   function closeReportDialog() {
@@ -607,15 +597,8 @@
     els.submitReport.textContent = "Submitting…";
 
     try {
-      const payload = {
-        spot_id: spot.id,
-        reason,
-        comment,
-        reporter_user_id: signedInUserId(),
-        reporter_token: signedInUserId() ? null : state.reporterToken
-      };
-      const result = await db.from("spot_reports").insert(payload);
-      if (result.error) throw result.error;
+      await api({action:"report",spot_id:spot.id,reason,comment,
+        reporterToken:state.reporterToken,captchaToken:takeCaptcha("reportCaptcha")});
       els.reportMessage.textContent = "Report submitted. The sighting has not been changed.";
       els.reportMessage.classList.add("success");
       els.submitReport.textContent = "Submitted";
@@ -697,6 +680,9 @@
       card.appendChild(report);
     }
 
+    const reference = document.createElement("small");
+    reference.className="sighting-reference";reference.textContent=`Sighting ID: ${spot.id}`;
+    card.append(reference);
     return card;
   }
 
@@ -735,7 +721,7 @@
       const point = map.latLngToLayerPoint(other.marker.getLatLng());
       if (Math.abs(point.x - origin.x) < width && Math.abs(point.y - origin.y) < height) ids.push(other.spot.id);
     });
-    return ids;
+    return ids.sort();
   }
 
   function showSighting(id, ids, focusControl) {
@@ -765,7 +751,10 @@
         select.appendChild(option);
       });
       select.value = id;
-      select.addEventListener("change", () => showSighting(select.value, ids, "select"));
+      select.addEventListener("change", event => {
+        event.stopPropagation();
+        showSighting(select.value, ids, "select");
+      });
 
       const controls = document.createElement("div");
       controls.className = "popup-sighting-controls";
@@ -779,13 +768,19 @@
       previous.textContent = "‹";
       previous.dataset.direction = "previous";
       previous.setAttribute("aria-label", "Previous nearby sighting");
-      previous.addEventListener("click", () => showSighting(ids[(index - 1 + ids.length) % ids.length], ids, "previous"));
+      previous.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
+        showSighting(ids[(index - 1 + ids.length) % ids.length], ids, "previous");
+      });
       const next = document.createElement("button");
       next.type = "button";
       next.textContent = "›";
       next.dataset.direction = "next";
       next.setAttribute("aria-label", "Next nearby sighting");
-      next.addEventListener("click", () => showSighting(ids[(index + 1) % ids.length], ids, "next"));
+      next.addEventListener("click", event => {
+        event.preventDefault(); event.stopPropagation();
+        showSighting(ids[(index + 1) % ids.length], ids, "next");
+      });
       controls.append(previous, position, next);
       const hint = document.createElement("p");
       hint.textContent = "Zoom in to separate nearby pins. Sightings at the same spot can be browsed here.";
@@ -793,7 +788,19 @@
       card.prepend(navigation);
     }
 
-    sightingPopup.options.maxHeight = Math.max(160, map.getSize().y - 90);
+    // Stop the native event on this stable ancestor before replacing content.
+    // Leaflet's _isClickDisabled walks parentNode; the old detached card no
+    // longer reaches the popup container after setContent inside a click handler.
+    L.DomEvent.disableClickPropagation(card);
+    L.DomEvent.disableScrollPropagation(card);
+    card.addEventListener("keydown", event => {
+      if (event.target.tagName === "SELECT" || !["ArrowLeft","ArrowRight"].includes(event.key) || ids.length<2) return;
+      event.preventDefault(); event.stopPropagation();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      showSighting(ids[(ids.indexOf(id)+direction+ids.length)%ids.length],ids,direction>0?"next":"previous");
+    });
+    sightingPopup.options.maxWidth = Math.min(300, Math.max(180, map.getSize().x - 56));
+    sightingPopup.options.maxHeight = Math.max(120, map.getSize().y - 85);
     sightingPopup.setLatLng(entry.marker.getLatLng()).setContent(card).openOn(map);
     if (focusControl) {
       const control = focusControl === "select" ? "select" : `[data-direction="${focusControl}"]`;
@@ -876,30 +883,20 @@
     if (state.spots.length !== before) renderMarkers();
   }
 
-  function updateCount() { els.spotCount.textContent = String(state.spots.length); }
+  function updateCount() { els.spotCount.textContent = state.stats ? String(state.stats.total) : "…"; }
 
   function renderStats() {
-    const counts = new Map();
-    state.spots.forEach(spot => {
-      const code = normalizeCountryCode(spot.country_code);
-      if (!code) return;
-      const name = safeText(spot.country, 100) || code;
-      const current = counts.get(code) || { name, count: 0 };
-      current.count += 1;
-      if (!current.name && name) current.name = name;
-      counts.set(code, current);
-    });
-
-    const ranking = [...counts.values()].sort((a,b) => b.count-a.count || a.name.localeCompare(b.name));
-    els.statsTotal.textContent = String(state.spots.length);
-    els.statsCountries.textContent = String(counts.size);
+    if (!state.stats) return;
+    const ranking = state.stats.countries.filter(c => normalizeCountryCode(c.code));
+    els.statsTotal.textContent = String(state.stats.total);
+    els.statsCountries.textContent = String(ranking.length);
     els.statsTopCountry.textContent = ranking[0]?.name || "—";
     els.countryRanking.replaceChildren();
 
     if (!ranking.length) {
       const p = document.createElement("p");
       p.className = "empty-state";
-      p.textContent = state.spots.length
+      p.textContent = state.stats.total
         ? "Existing sightings have no recognised country data yet."
         : "No sightings yet.";
       els.countryRanking.appendChild(p);
@@ -935,8 +932,16 @@
   function updateAccountUi() {
     const signedIn = Boolean(state.user && !state.user.is_anonymous);
     els.accountButton.textContent = signedIn ? "Account" : "Sign in";
-    els.accountFields.hidden = signedIn;
-    els.signedInPanel.hidden = !signedIn;
+    els.accountFields.hidden = signedIn && !state.recovery;
+    els.signedInPanel.hidden = !signedIn || state.recovery;
+    $("accountHeading").textContent = state.recovery ? "Choose a new password" : (signedIn ? "Your account" : "Sign in");
+    els.signInButton.textContent = state.recovery ? "Save password" : "Sign in";
+    els.signUpButton.hidden = state.recovery;
+    els.accountEmail.required = !state.recovery;
+    els.accountEmail.closest("label").hidden = state.recovery;
+    els.accountPassword.minLength = state.recovery ? 8 : 6;
+    els.accountPassword.autocomplete = state.recovery ? "new-password" : "current-password";
+    $("accountHelpActions").hidden = state.recovery;
     els.signedInEmail.textContent = signedIn ? safeText(state.user.email, 160) : "";
   }
 
@@ -971,21 +976,21 @@
   async function signUp() {
     const email = safeText(els.accountEmail.value, 254).toLowerCase();
     const password = els.accountPassword.value;
-    if (!email || password.length < 6) {
-      els.accountMessage.textContent = "Use a valid email and a password of at least 6 characters.";
+    if (!email || password.length < 8) {
+      els.accountMessage.textContent = "Use a valid email and a password of at least 8 characters.";
       return;
     }
 
     setAccountBusy(true, "Creating…");
     try {
-      const result = await db.auth.signUp({ email, password });
+      const result = await db.auth.signUp({ email, password, options:{emailRedirectTo:PRODUCTION_URL} });
       if (result.error) throw result.error;
       if (result.data?.session) {
         els.accountMessage.textContent = "Account created and signed in.";
         els.accountMessage.classList.add("success");
         setTimeout(closeAccountDialog, 450);
       } else {
-        els.accountMessage.textContent = "Account created. Check your email to confirm it, then sign in.";
+        els.accountMessage.textContent = "Check your email to confirm your account. Older emails may still point to localhost; use “Resend confirmation” for a fresh link.";
         els.accountMessage.classList.add("success");
       }
     } catch (err) {
@@ -1000,13 +1005,15 @@
   function setAccountBusy(busy, signInText = "Sign in") {
     els.signInButton.disabled = busy;
     els.signUpButton.disabled = busy;
-    els.signInButton.textContent = busy ? signInText : "Sign in";
+    els.signInButton.textContent = busy ? signInText : (state.recovery ? "Save password" : "Sign in");
+    $("resendConfirmation").disabled = busy;
+    $("forgotPassword").disabled = busy;
   }
 
   els.accountForm.addEventListener("submit", e => {
     e.preventDefault();
     if (!live) return;
-    signIn();
+    if (state.recovery) savePassword(); else signIn();
   });
   els.signUpButton.addEventListener("click", () => { if (live) signUp(); });
   els.signOutButton.addEventListener("click", async () => {
@@ -1030,46 +1037,226 @@
       return;
     }
     try {
+      // Subscribe before getSession: recovery/confirmation events may occur
+      // during the SDK's URL processing. Never await Auth APIs in this callback.
+      const authResult = db.auth.onAuthStateChange((event, session) => {
+        state.user = session?.user || null;
+        if(event === "PASSWORD_RECOVERY") state.recovery = true;
+        updateAccountUi();
+        refreshSightingPopup();
+        setTimeout(() => {
+          refreshModerator();
+          if(event === "PASSWORD_RECOVERY") {
+            if(!els.accountDialog.open) openAccountDialog();
+            els.accountMessage.textContent = "Your recovery link is valid. Choose a new password.";
+          }
+        },0);
+      });
       const sessionResult = await db.auth.getSession();
       if (sessionResult.error) throw sessionResult.error;
       state.user = sessionResult.data.session?.user || null;
       updateAccountUi();
-      renderMarkers();
-
-      const authResult = db.auth.onAuthStateChange((_event, session) => {
-        state.user = session?.user || null;
-        updateAccountUi();
-        renderMarkers();
-      });
+      await handleAuthReturn();
       state.authSubscription = authResult.data?.subscription || null;
     } catch (err) {
       console.error(err);
       state.user = null;
       updateAccountUi();
+      if(initialAuth.error || initialAuth.hasToken || initialAuth.type === "recovery") {
+        openAccountDialog();
+        els.accountMessage.textContent="This email link is expired, invalid or has already been used. Enter your email and request a fresh confirmation or recovery link. Older localhost links must be resent.";
+        history.replaceState(null,"",location.pathname);
+      }
     }
   }
 
-  async function loadSpots() {
-    if (!live) return setStatus("Demo mode");
-    try {
-      const result = await db.from("spots").select("*").order("created_at", { ascending:false }).limit(10000);
-      if (result.error) throw result.error;
-      state.spots = result.data || [];
-      renderMarkers();
-      setStatus("Live · shared worldwide", true);
+  async function api(body) {
+    const session = await db.auth.getSession();
+    const headers = {apikey:key};
+    if(session.data.session?.access_token) headers.Authorization = `Bearer ${session.data.session.access_token}`;
+    if(!(body instanceof FormData)) headers["Content-Type"] = "application/json";
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/public-api`,{
+      method:"POST",headers,body:body instanceof FormData ? body : JSON.stringify(body),signal:AbortSignal.timeout(30000)
+    });
+    let result;
+    try { result = await response.json(); } catch { throw new Error("The shared map service is unavailable. Please try again later."); }
+    if(!response.ok) throw new Error(result.error || "The shared map service is unavailable. Please try again later.");
+    return result;
+  }
 
-      state.realtimeChannel = db.channel("nett-hier-live-spots")
-        .on("postgres_changes", { event:"INSERT", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
-        .on("postgres_changes", { event:"UPDATE", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
-        .on("postgres_changes", { event:"DELETE", schema:"public", table:"spots" }, p => p.old?.id && removeSpot(p.old.id))
-        .subscribe();
-    } catch (err) {
-      console.error(err);
-      setStatus("Could not connect to shared map — check Supabase setup");
+  const captchaWidgets = new Map();
+  async function renderCaptcha(id) {
+    const box = $(id); box.hidden = false;
+    try {
+      state.backendConfig ||= await api({action:"config"});
+      if(!state.backendConfig.ready || !state.backendConfig.turnstileSiteKey) throw new Error("New submissions are being prepared. Please try again later.");
+      if(!window.turnstile) {
+        await new Promise((resolve,reject) => {
+          const started=Date.now();
+          const tick=()=>window.turnstile ? resolve() : Date.now()-started>10000 ? reject(new Error("Bot check could not load. Refresh the page and try again.")) : setTimeout(tick,100);
+          tick();
+        });
+      }
+      if(captchaWidgets.has(id)) window.turnstile.reset(captchaWidgets.get(id));
+      else {box.replaceChildren();captchaWidgets.set(id,window.turnstile.render(box,{sitekey:state.backendConfig.turnstileSiteKey,action:"submission",size:"flexible"}));}
+    } catch(error) { box.textContent=error.message; }
+  }
+  function takeCaptcha(id) {
+    const widget = captchaWidgets.get(id);
+    const token = widget != null && window.turnstile?.getResponse(widget);
+    if(!token) throw new Error("Please complete the bot check before submitting.");
+    // Tokens are single use; always refresh after an attempted submission.
+    setTimeout(()=>window.turnstile?.reset(widget),0);
+    return token;
+  }
+
+  async function handleAuthReturn() {
+    const url=new URL(location.href);
+    const hash=new URLSearchParams(url.hash.slice(1));
+    const error=url.searchParams.get("error_code")||hash.get("error_code")||hash.get("error")||url.searchParams.get("error");
+    const type=hash.get("type")||url.searchParams.get("type");
+    const hadToken=hash.has("access_token")||url.searchParams.has("code")||type==="signup"||state.recovery;
+    // Keep a recovery hint captured before the SDK clears its fragment.
+    if(type==="recovery"||initialAuth.type==="recovery") state.recovery=Boolean(state.user);
+    if(error||initialAuth.error) {
+      openAccountDialog();
+      els.accountMessage.textContent="This email link is expired, invalid or has already been used. Try signing in if you already confirmed, or enter your email and choose Resend confirmation. Older links may still point to localhost and must be resent.";
+    } else if(hadToken||initialAuth.hasToken) {
+      openAccountDialog();
+      els.accountMessage.textContent = state.user
+        ? (state.recovery ? "Choose a new password to complete recovery." : "Email confirmed — you are signed in.")
+        : "We could not complete this link. Sign in or request a fresh confirmation email.";
+      els.accountMessage.classList.toggle("success",!!state.user);
     }
+    if(error||hadToken||initialAuth.hasToken||initialAuth.error) history.replaceState(null,"",url.pathname);
+  }
+  async function emailHelp(kind) {
+    if(!live || !els.accountEmail.reportValidity()) return;
+    setAccountBusy(true,"Sending…");
+    try {
+      const email=safeText(els.accountEmail.value,254).toLowerCase();
+      const result=kind==="resend" ? await db.auth.resend({type:"signup",email,options:{emailRedirectTo:PRODUCTION_URL}})
+        : await db.auth.resetPasswordForEmail(email,{redirectTo:PRODUCTION_URL});
+      if(result.error) throw result.error;
+      els.accountMessage.textContent = kind==="resend" ? "If confirmation is needed, a fresh email is on its way. Use the newest link; older localhost links will not work." : "If an account exists for this email, a password recovery link is on its way.";
+      els.accountMessage.classList.add("success");
+    } catch(error) {els.accountMessage.textContent=friendlyError(error,"Could not send that email.");}
+    finally {setAccountBusy(false);}
+  }
+  async function savePassword() {
+    if(els.accountPassword.value.length<8) {els.accountMessage.textContent="Use at least 8 characters.";return;}
+    setAccountBusy(true,"Saving…");
+    try {
+      const {error}=await db.auth.updateUser({password:els.accountPassword.value});if(error)throw error;
+      state.recovery=false;updateAccountUi();els.accountPassword.value="";
+      els.accountMessage.textContent="Password updated. You are signed in.";els.accountMessage.classList.add("success");
+    } catch(error) {els.accountMessage.textContent=friendlyError(error,"Could not update your password.");}
+    finally {setAccountBusy(false);}
+  }
+  $("resendConfirmation").addEventListener("click",()=>emailHelp("resend"));
+  $("forgotPassword").addEventListener("click",()=>emailHelp("recovery"));
+  $("deleteAccount").addEventListener("click",async()=>{
+    if(!confirm("Delete your account AND all sightings and photos added while signed in? Guest sightings cannot be linked to an account. This cannot be undone."))return;
+    const button=$("deleteAccount");button.disabled=true;
+    try {
+      await api({action:"delete-account",confirm:"DELETE MY ACCOUNT"});
+      await db.auth.signOut({scope:"local"});state.user=null;updateAccountUi();
+      els.accountMessage.textContent="Your account and its public sightings have been deleted. Photos are queued for removal; cached copies may remain temporarily.";
+      await loadViewport();await loadStats();
+    }catch(error){els.accountMessage.textContent=error.message;}finally{button.disabled=false;}
+  });
+  async function refreshModerator() {
+    $("moderationButton").hidden=true;
+    if(!signedInUserId())return;
+    try {const data=await api({action:"moderator"});$("moderationButton").hidden=!data.moderator;}catch{}
+  }
+  $("moderationButton").addEventListener("click",async()=>{if(!$("moderationDialog").open)$("moderationDialog").showModal();await loadModeration();});
+  $("closeModeration").addEventListener("click",()=>$("moderationDialog").close());
+  $("refreshModeration").addEventListener("click",loadModeration);
+  async function loadModeration() {
+    const list=$("moderationReports");list.replaceChildren();
+    try {
+      const data=await api({action:"moderate",operation:"list"});
+      $("moderationStatus").textContent=`${data.openReports} open reports · ${(data.storageBytes/1048576).toFixed(1)} MB of ${(data.storageBudget/1048576).toFixed(0)} MB photo budget · ${data.cleanupPending} photos awaiting cleanup`;
+      const pause=$("pauseSubmissions");pause.textContent=data.paused?"Resume submissions":"Pause submissions";
+      pause.onclick=async()=>{try {await api({action:"moderate",operation:"pause",paused:!data.paused});await loadModeration();}catch(e){$("moderationStatus").textContent=e.message;}};
+      for(const report of data.reports) {
+        const card=document.createElement("article");card.className="moderation-report";
+        const heading=document.createElement("strong");heading.textContent=`${report.reason} · ${report.place||report.spot_id}`;
+        const note=document.createElement("p");note.textContent=report.comment||"";
+        const img=document.createElement("img");img.src=report.image_url;img.alt="Reported sighting";img.loading="lazy";
+        const view=document.createElement("button");view.type="button";view.textContent="View on map";view.className="secondary-button";
+        view.onclick=()=>{$("moderationDialog").close();switchView("map");map.setView([report.lat,report.lng],17);};
+        const resolve=document.createElement("button");resolve.type="button";resolve.textContent="Dismiss report";resolve.className="secondary-button";
+        const remove=document.createElement("button");remove.type="button";remove.textContent="Remove sighting + photo";remove.className="popup-delete-button";
+        const act=async(operation,target)=>{try{await api({action:"moderate",operation,target});await loadModeration();loadViewport();loadStats();}catch(e){$("moderationStatus").textContent=e.message;}};
+        resolve.onclick=()=>act("resolve",report.id);
+        remove.onclick=()=>{if(confirm("Remove this public sighting and its photo?"))act("remove",report.spot_id);};
+        card.append(heading,note,img,view,resolve,remove);list.append(card);
+      }
+      for(const request of data.requests||[]) {
+        const card=document.createElement("article");card.className="moderation-report";
+        const title=document.createElement("strong");title.textContent="Private request";
+        const text=document.createElement("p");text.textContent=request.message;
+        const info=document.createElement("p");info.textContent=`Sighting: ${request.spot_id||"not supplied"} · Reply: ${request.reply_to||"not supplied"}`;
+        const resolve=document.createElement("button");resolve.type="button";resolve.className="secondary-button";resolve.textContent="Mark handled";
+        resolve.onclick=async()=>{try{await api({action:"moderate",operation:"resolve",target:request.id});await loadModeration();}catch(e){$("moderationStatus").textContent=e.message;}};
+        card.append(title,text,info,resolve);list.append(card);
+      }
+      if(!data.reports.length&&!data.requests?.length)list.textContent="No open reports or private requests.";
+    }catch(error){$("moderationStatus").textContent=error.message;}
+  }
+
+  async function loadStats() {
+    try {
+      const result=await db.rpc("nh_stats");if(result.error)throw result.error;
+      state.stats=result.data;updateCount();renderStats();
+    }catch(error){$("statsTotal").textContent="Unavailable";setStatus("Statistics unavailable — backend upgrade required");}
+  }
+  function viewportBounds() {
+    const b=map.getBounds();const wrap=x=>((x+180)%360+360)%360-180;
+    return {south:Math.max(-90,b.getSouth()),north:Math.min(90,b.getNorth()),west:b.getEast()-b.getWest()>=360?-180:wrap(b.getWest()),east:b.getEast()-b.getWest()>=360?180:wrap(b.getEast())};
+  }
+  async function loadViewport() {
+    if(!live)return;
+    const generation=++state.mapLoad;
+    const b=viewportBounds();
+    try {
+      if(map.getZoom()<8) {
+        const {data,error}=await db.rpc("nh_clusters",{...b,cell:360/2**map.getZoom()/5});if(error)throw error;
+        if(generation!==state.mapLoad)return;
+        state.spots=[];renderMarkers();clusterLayer.clearLayers();
+        for(const cluster of data) {
+          const icon=L.divIcon({className:"sighting-cluster",html:String(cluster.count),iconSize:[38,38]});
+          L.marker([cluster.lat,cluster.lng],{icon,title:`${cluster.count} sightings — zoom in to see individual pins`})
+            .on("click",event=>{L.DomEvent.stop(event.originalEvent);map.setView([cluster.lat,cluster.lng],Math.min(18,map.getZoom()+3),{animate:false});}).addTo(clusterLayer);
+        }
+        setStatus("Live · zoom in for individual sightings",true);
+      }else {
+        let after=null;const loaded=new Map();
+        setStatus("Loading this map area…");
+        do {
+          const {data,error}=await db.rpc("nh_map_page",{...b,after_id:after});if(error)throw error;
+          if(generation!==state.mapLoad)return;
+          data.spots.forEach(spot=>loaded.set(spot.id,spot));
+          after=data.next;
+        }while(after);
+        if(generation!==state.mapLoad)return;
+        clusterLayer.clearLayers();state.spots=[...loaded.values()];renderMarkers();
+        setStatus(`Live · ${loaded.size} sightings in this map area`,true);
+      }
+    }catch(error){if(generation===state.mapLoad)setStatus("Could not load map area — refresh to retry");console.error(error);}
+  }
+  async function loadSpots() {
+    if(!live)return setStatus("Demo mode");
+    await Promise.all([loadViewport(),loadStats()]);
+    // Refresh only this viewport. Avoid broadcasting every photo/row into every
+    // browser as the dataset grows. Poll also catches inserts outside this view.
+    state.refreshInterval=setInterval(()=>{loadStats();if(!document.hidden&&!sightingPopup.isOpen())loadViewport();},60000);
   }
 
   addEventListener("pagehide", () => {
+    clearInterval(state.refreshInterval);
     if (db && state.realtimeChannel) db.removeChannel(state.realtimeChannel);
     state.authSubscription?.unsubscribe?.();
   });

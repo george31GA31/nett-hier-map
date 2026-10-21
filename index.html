@@ -16,11 +16,10 @@
 
   <link rel="icon" href="favicon.svg?v=3" type="image/svg+xml" />
   <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
-  <link rel="preconnect" href="https://nominatim.openstreetmap.org" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css?v=8" />
-  <link rel="stylesheet" href="v6.css?v=6" />
-  <link rel="stylesheet" href="sticker-carousel.css?v=1" />
+  <link rel="stylesheet" href="v6.css?v=9" />
+  <link rel="stylesheet" href="sticker-carousel.css?v=2" />
 </head>
 <body>
   <header class="site-header">
@@ -252,18 +251,23 @@
       </label>
 
       <label class="field">
-        <span>Added by <b>*</b></span>
+        <span>Public nickname <b>*</b></span>
         <input
           id="addedByInput"
           name="added_by"
           type="text"
           maxlength="80"
-          autocomplete="name"
-          placeholder="Your name"
+          autocomplete="nickname"
+          placeholder="Your public nickname"
           required
         />
       </label>
 
+      <div id="publicConsentWrap" class="privacy-consent">
+        <label><input id="publicConsent" type="checkbox" required /> I understand that my nickname, exact map pin, date, note and photo will be public.</label>
+        <p>Use a nickname. Avoid faces, private addresses and sensitive locations. Photo metadata is removed when we process your image. <a href="privacy.html" target="_blank" rel="noopener">Privacy & removal requests</a></p>
+      </div>
+      <div id="sightingCaptcha" class="captcha-box" hidden></div>
       <p id="formMessage" class="form-message" aria-live="polite"></p>
 
       <div class="dialog-actions">
@@ -278,7 +282,7 @@
       <div class="dialog-header">
         <div>
           <p class="eyebrow">ACCOUNT</p>
-          <h1>Sign in</h1>
+          <h1 id="accountHeading">Sign in</h1>
         </div>
         <button class="icon-button" id="closeAccountDialog" type="button" aria-label="Close">×</button>
       </div>
@@ -303,9 +307,15 @@
 
       <div id="signedInPanel" hidden>
         <p class="account-note">Signed in as <strong id="signedInEmail"></strong></p>
+        <p class="account-note">Deleting your account also removes sightings and photos you added while signed in. Older guest sightings need a <a href="privacy.html">removal request</a>.</p>
+        <button id="deleteAccount" class="popup-delete-button" type="button">Delete account and my sightings</button>
         <button id="signOutButton" class="secondary-button" type="button">Sign out</button>
       </div>
 
+      <div id="accountHelpActions" class="account-actions">
+        <button id="resendConfirmation" class="secondary-button" type="button">Resend confirmation</button>
+        <button id="forgotPassword" class="secondary-button" type="button">Forgot password?</button>
+      </div>
       <p id="accountMessage" class="form-message" aria-live="polite"></p>
     </form>
   </dialog>
@@ -339,6 +349,8 @@
       </label>
 
       <p class="account-note">Submitting a report does not automatically delete or change the sighting.</p>
+      <div id="reportCaptcha" class="captcha-box" hidden></div>
+      <p class="account-note">For a private removal request, use <a href="privacy.html" target="_blank" rel="noopener">Privacy & contact</a>.</p>
       <p id="reportMessage" class="form-message" aria-live="polite"></p>
 
       <div class="dialog-actions">
@@ -348,11 +360,19 @@
     </form>
   </dialog>
 
+  <footer class="site-footer"><a href="privacy.html">Privacy, contact & removal</a><button id="moderationButton" class="account-button" type="button" hidden>Owner moderation</button></footer>
+  <dialog id="moderationDialog" class="sighting-dialog">
+    <div class="dialog-header"><h1>Moderation</h1><button id="closeModeration" class="icon-button" type="button" aria-label="Close">×</button></div>
+    <p id="moderationStatus" role="status"></p>
+    <div class="account-actions"><button id="refreshModeration" class="secondary-button" type="button">Refresh reports</button><button id="pauseSubmissions" class="secondary-button" type="button">Pause submissions</button></div>
+    <div id="moderationReports"></div>
+  </dialog>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
   <script src="config.js?v=6"></script>
-  <script src="app-v6.js?v=8"></script>
-  <script src="sticker-carousel.js?v=1"></script>
+  <script src="app-v6.js?v=9"></script>
+  <script src="sticker-carousel.js?v=2"></script>
 </body>
 </html>
 

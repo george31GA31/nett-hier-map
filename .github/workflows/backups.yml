@@ -1,0 +1,51 @@
+name: Encrypted database and photo backups
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 3 * * *'
+permissions:
+  contents: read
+jobs:
+  backup:
+    if: vars.LAUNCH_BACKUPS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backup tools
+        run: sudo apt-get update && sudo apt-get install -y age
+      - name: Back up and encrypt database separately
+        env:
+          PGDATABASE: ${{ secrets.SUPABASE_DB_URL }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          test -n "$PGDATABASE"
+          test -n "$AGE_RECIPIENT"
+          docker run --rm --network host -e PGDATABASE -v "$RUNNER_TEMP:/backups" postgres:17.6 pg_dump --format=custom --no-owner --file=/backups/database.dump
+          age --recipient "$AGE_RECIPIENT" --output "$RUNNER_TEMP/database.dump.age" "$RUNNER_TEMP/database.dump"
+          rm "$RUNNER_TEMP/database.dump"
+      - name: Back up and encrypt photo objects with checksums
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          python ops/storage.py backup --output "$RUNNER_TEMP/photos.tar.gz"
+          age --recipient "$AGE_RECIPIENT" --output "$RUNNER_TEMP/photos.tar.gz.age" "$RUNNER_TEMP/photos.tar.gz"
+          rm "$RUNNER_TEMP/photos.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: database-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/database.dump.age
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photos-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/photos.tar.gz.age
+          retention-days: 30
+          if-no-files-found: error

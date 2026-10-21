@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="referrer" content="no-referrer"/><title>Privacy & removal · Nett hier.</title><link rel="stylesheet" href="styles.css?v=8"/><link rel="stylesheet" href="v6.css?v=9"/></head>
+<body class="privacy-page"><main class="privacy-wrap">
+<a href="./">← Back to the sticker map</a><h1>Privacy, contact & removal</h1>
+<p>This independent, non-commercial fan project documents existing stickers. We do not endorse vandalism, trespassing, fly-posting or placing stickers without permission.</p>
+<h2>What becomes public</h2><p>Each sighting publishes your chosen nickname, exact map coordinates, date, note and photo. Use a nickname rather than your full name. Do not upload faces, identifying documents, private addresses or sensitive locations. Uploaded images are resized and re-encoded in your browser to remove embedded location and camera metadata.</p>
+<h2>What stays private</h2><p>Your sign-in email and password are handled by Supabase Auth. Your email is not added to public sightings. Reports and private removal requests are visible only to the site owner. Submission limits use a keyed hash of the network address, normally cleared after two days by scheduled cleanup; the application does not store the raw address. Hosting and security providers may retain their own access logs.</p>
+<p>Supabase hosts the database and photos. GitHub Pages hosts this website. Cloudflare Turnstile checks submissions for bots. OpenStreetMap supplies map tiles and locality names; map viewing shares your IP address with tile servers. The server looks up an approximate locality when you add a pin. See <a href="https://supabase.com/privacy">Supabase privacy</a>, <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub privacy</a>, <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare privacy</a> and <a href="https://osmfoundation.org/wiki/Privacy_Policy">OpenStreetMap privacy</a>.</p>
+<h2>Remove a sighting or account</h2><p>Sign in and open one of your sightings to edit or delete it. Account → Delete account removes the account and all sightings and associated photos added while signed in. Guest and older sightings cannot reliably be attributed to an account; request their removal below. Deletions enter a photo cleanup queue. Cached images and separate backups may persist temporarily; backups are kept for 30 days and are not used to republish removed content.</p>
+<p>Use “Report sighting” on the map for a wrong, damaged or inappropriate sticker. For sensitive photos, private locations, access/deletion questions or other contact, send a private request here. Include the sighting ID (available below the photo on the map) or coordinates. Do not post private details in a public GitHub issue.</p>
+<form id="supportForm">
+<label class="field"><span>Sighting ID (optional)</span><input id="supportSpot" maxlength="36" /></label>
+<label class="field"><span>Reply email (optional, private)</span><input id="supportEmail" type="email" maxlength="254" /></label>
+<label class="field"><span>Request</span><textarea id="supportText" required maxlength="2000" rows="5" placeholder="Tell the owner what needs removing or how they can help."></textarea></label>
+<div id="supportCaptcha" class="captcha-box"></div><p id="supportMessage" role="status"></p>
+<button class="primary-button" id="supportSubmit" type="submit">Send private request</button>
+</form>
+<p>The owner reviews requests in the moderation inbox. This is a volunteer project; urgent exposure can also be flagged using “Report sighting”.</p>
+</main><script src="config.js?v=6"></script><script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script><script src="privacy.js?v=1"></script></body></html>

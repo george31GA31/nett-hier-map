@@ -1,0 +1,33 @@
+{
+  "name": "nett-hier-map",
+  "version": "1.0.0",
+  "description": "Nett hier sticker map — public launch hardening",
+  "main": "app-v6.js",
+  "scripts": {
+    "test": "node --test tests/backend.test.cjs",
+    "test:ui": "playwright test",
+    "check": "node --check app-v6.js && node --check sticker-carousel.js && node --check privacy.js",
+    "check:edge": "deno check --node-modules-dir=manual supabase/functions/public-api/index.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/george31GA31/nett-hier-map.git"
+  },
+  "keywords": [],
+  "author": "",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/george31GA31/nett-hier-map/issues"
+  },
+  "homepage": "https://github.com/george31GA31/nett-hier-map#readme",
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.10",
+    "@playwright/test": "1.56.1",
+    "@supabase/supabase-js": "2.116.0",
+    "deno": "2.5.4",
+    "leaflet": "1.9.4",
+    "supabase": "2.83.0",
+    "typescript": "5.9.3"
+  },
+  "private": true
+}

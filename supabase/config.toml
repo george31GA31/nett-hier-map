@@ -1,0 +1,14 @@
+project_id = "nett-hier-map"
+
+[auth]
+site_url = "https://george31ga31.github.io/nett-hier-map/"
+additional_redirect_urls = ["https://george31ga31.github.io/nett-hier-map/"]
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[functions.public-api]
+# Guests use this endpoint too. Every sensitive action verifies the JWT itself.
+verify_jwt = false

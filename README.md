@@ -1,30 +1,25 @@
-# Nett hier. Sticker Map — V6
+# Nett hier. Sticker Map
 
-V6 keeps the existing map, styling and stored sightings, while adding optional accounts, secure ownership, reporting and database hardening.
+An independent fan map documenting existing Nett hier / THE LÄND stickers. Existing sightings, photos, accounts and stable IDs are preserved by the public-launch work.
 
-## What changed
+**Production rollout is not complete.** The implementation is on a review branch until the correct Supabase project is accessible and live acceptance checks pass. See [LAUNCH.md](LAUNCH.md) for the exact status, tested changes, required settings, rollout order and remaining verification.
 
-- The map still works for guests and all sightings remain publicly visible.
-- Email/password accounts are optional.
-- A sighting added while signed in is linked to that account with `owner_id`.
-- Only that owner can edit or delete it. Ownership is enforced by Supabase Row Level Security and column permissions, not just by the browser UI.
-- Existing/pre-account sightings remain ownerless, visible and protected from ordinary editing/deletion.
-- Guest-created sightings remain ownerless/protected. Sign in before plotting if you want future edit/delete control.
-- Non-owned sightings can be reported for one of the six supported reasons. `Other` allows a maximum 50-character comment.
-- Reports are stored in `spot_reports`; they do not delete or alter a sighting and are not emailed anywhere yet.
-- Duplicate reports for the same point are limited to one per signed-in account or one per browser guest token.
-- Country statistics only recognise the agreed 198 codes: 193 UN member states plus Vatican City, Palestine, Taiwan, Kosovo and Western Sahara.
-- Photo uploads remain public/free but are restricted to the existing JPEG bucket, 6 MB bucket limit and generated `.jpg` filename pattern.
-- The browser uses the Supabase publishable key only; no privileged service key is exposed.
+## Development
 
-## Deploy / upgrade
+```sh
+npm ci
+npm run check
+npm run check:edge
+npm test
+npx playwright install chromium
+npm run test:ui
+```
 
-The live project needs the database migration in `supabase_update_v6.sql` applied once, then the V6 frontend files can be deployed.
+Serve this folder with a static HTTP server for the frontend. The browser uses only the publishable key in `config.js`. Backend secrets belong in Supabase Edge settings or protected CI environments.
 
-For a clean Supabase setup, use the base `supabase.sql` and then apply `supabase_update_v6.sql`.
+- `supabase/migrations/`: additive launch migration, based on the existing V6 schema.
+- `supabase/functions/public-api/`: server-verified submissions, uploads, moderation, account deletion and shared geocoding.
+- `ops/`: live audit, URL configuration, read-only orphan inventory, photo backup and monitoring tools.
+- `.github/workflows/`: tests, encrypted separate database/photo backups and owner alerts. Operations/backups start disabled pending configuration.
 
-## Important ownership behaviour
-
-Older sightings deliberately have `owner_id = NULL`. They are not assigned to anyone retrospectively because there is no reliable way to prove who originally created them.
-
-If an account is later deleted, its owned sightings are kept and become ownerless/protected rather than being deleted.
+New account deletion removes its owned public sightings and queues their photos for deletion. Older guest/legacy sightings remain protected and can be removed through the private contact route or owner moderation. Do not re-run historic setup SQL after the launch migration; it contains obsolete write policies.
