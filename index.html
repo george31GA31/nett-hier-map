@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://nominatim.openstreetmap.org" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css?v=8" />
-  <link rel="stylesheet" href="v6.css?v=6" />
+  <link rel="stylesheet" href="v6.css?v=7" />
   <link rel="stylesheet" href="sticker-carousel.css?v=1" />
 </head>
 <body>
@@ -48,6 +48,7 @@
     <button class="tab-button active" type="button" data-view="map" aria-selected="true">Map</button>
     <button class="tab-button" type="button" data-view="stats" aria-selected="false">Stats</button>
     <button class="tab-button" type="button" data-view="stickers" aria-selected="false">Stickers</button>
+    <button id="feedbackTab" class="tab-button" type="button" data-view="feedback" aria-selected="false" hidden>Feedback</button>
   </nav>
 
   <main class="app-main">
@@ -203,7 +204,49 @@
         </aside>
       </div>
     </section>
+    <section id="feedbackView" class="view content-view" hidden aria-label="Admin feedback">
+      <div class="content-wrap">
+        <div class="page-heading">
+          <p class="eyebrow">ADMIN</p>
+          <h1>Feedback</h1>
+          <p>Review reported stickers, check their location and mark reports as resolved.</p>
+        </div>
+        <div class="feedback-toolbar">
+          <label for="feedbackFilter">Reports</label>
+          <select id="feedbackFilter">
+            <option value="open">Open</option>
+            <option value="resolved">Resolved</option>
+            <option value="all">All</option>
+          </select>
+          <button id="refreshFeedback" class="secondary-button" type="button">Refresh</button>
+        </div>
+        <p id="feedbackMessage" class="form-message" role="status" aria-live="polite"></p>
+        <div id="feedbackList" class="feedback-list"></div>
+      </div>
+    </section>
   </main>
+
+  <dialog id="duplicateDialog" class="sighting-dialog duplicate-dialog" aria-labelledby="duplicateTitle" aria-describedby="duplicateDescription">
+    <div class="duplicate-content">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">NEARBY STICKER</p>
+          <h1 id="duplicateTitle">Is this the same one?</h1>
+        </div>
+        <button id="closeDuplicateDialog" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <p id="duplicateDescription" class="account-note">There is already a sticker within 1.5 metres of this spot. Are you sure it isn't the same one?</p>
+      <p id="duplicatePosition" class="account-note" role="status" aria-live="polite"></p>
+      <img id="duplicatePhoto" class="duplicate-photo" alt="Nearby sticker sighting" />
+      <p id="duplicatePhotoUnavailable" class="account-note" hidden>The photo is unavailable. Please check the sighting details below.</p>
+      <strong id="duplicatePlace" class="duplicate-place"></strong>
+      <p id="duplicateDetails" class="account-note"></p>
+      <div class="dialog-actions">
+        <button id="duplicateSame" class="secondary-button" type="button">It's the same</button>
+        <button id="duplicateDifferent" class="primary-button" type="button">It's not the same</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="sightingDialog" class="sighting-dialog">
     <form id="sightingForm">
@@ -235,34 +278,36 @@
         <img id="photoPreview" alt="Photo preview" />
       </div>
 
-      <label class="field">
-        <span>Date spotted</span>
-        <input id="dateInput" name="spotted_on" type="date" required />
-      </label>
+      <div id="metadataFields">
+        <label class="field">
+          <span>Date spotted</span>
+          <input id="dateInput" name="spotted_on" type="date" required />
+        </label>
 
-      <label class="field">
-        <span>Note</span>
-        <textarea
-          id="noteInput"
-          name="note"
-          maxlength="500"
-          rows="3"
-          placeholder="Optional — lamp post, hostel bathroom, mountain hut…"
-        ></textarea>
-      </label>
+        <label class="field">
+          <span>Note</span>
+          <textarea
+            id="noteInput"
+            name="note"
+            maxlength="500"
+            rows="3"
+            placeholder="Optional — lamp post, hostel bathroom, mountain hut…"
+          ></textarea>
+        </label>
 
-      <label class="field">
-        <span>Added by <b>*</b></span>
-        <input
-          id="addedByInput"
-          name="added_by"
-          type="text"
-          maxlength="80"
-          autocomplete="name"
-          placeholder="Your name"
-          required
-        />
-      </label>
+        <label class="field">
+          <span>Added by <b>*</b></span>
+          <input
+            id="addedByInput"
+            name="added_by"
+            type="text"
+            maxlength="80"
+            autocomplete="name"
+            placeholder="Your name"
+            required
+          />
+        </label>
+      </div>
 
       <p id="formMessage" class="form-message" aria-live="polite"></p>
 
@@ -338,7 +383,7 @@
         <input id="reportComment" name="comment" type="text" maxlength="50" placeholder="Up to 50 characters" />
       </label>
 
-      <p class="account-note">Submitting a report does not automatically delete or change the sighting.</p>
+      <p class="account-note">Your report goes to the site admin for review. It does not automatically delete or change the sighting.</p>
       <p id="reportMessage" class="form-message" aria-live="polite"></p>
 
       <div class="dialog-actions">
@@ -351,7 +396,8 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
   <script src="config.js?v=6"></script>
-  <script src="app-v6.js?v=8"></script>
+  <script src="map-utils.js?v=1"></script>
+  <script src="app-v6.js?v=9"></script>
   <script src="sticker-carousel.js?v=1"></script>
 </body>
 </html>

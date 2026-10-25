@@ -1,0 +1,14 @@
+{
+  "name": "nett-hier-map",
+  "private": true,
+  "version": "7.0.0",
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "test:browser": "playwright test"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.11",
+    "leaflet": "1.9.4",
+    "playwright": "1.62.1"
+  }
+}

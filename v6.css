@@ -24,3 +24,34 @@ button,input,textarea,select{font:inherit}
   .account-actions button{min-height:48px}
 }
 @media (max-width:410px){.account-button{padding:0 7px}}
+
+/* Nearby confirmations and admin tools use the same cards and buttons as the map. */
+.duplicate-content{padding:24px}
+.duplicate-photo{display:block;width:100%;max-height:320px;object-fit:contain;margin-top:16px;border:1px solid var(--line);border-radius:14px;background:#f4f3ee}
+.duplicate-place{display:block;margin-top:14px;overflow-wrap:anywhere}
+.country-name{display:flex;align-items:baseline;gap:9px}
+.country-rank{flex:0 0 34px;color:#786800;font-size:12px;font-variant-numeric:tabular-nums}
+.country-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.popup-move-button{grid-column:1/-1;min-height:38px;border:0;border-radius:999px;background:#fff7b8;color:var(--ink);font-size:12px;font-weight:800}
+.feedback-toolbar{display:flex;align-items:center;gap:12px}
+.feedback-toolbar label{font-size:13px;font-weight:800}
+.feedback-toolbar select{min-height:46px;padding:0 36px 0 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+.feedback-toolbar button{margin-left:auto}
+.feedback-list{display:grid;gap:16px;margin-top:18px}
+.feedback-card{display:grid;grid-template-columns:130px minmax(0,1fr);gap:18px;padding:20px;border:1px solid #e1dfd6;border-radius:20px;background:rgba(255,255,255,.9)}
+.feedback-photo{width:130px;height:130px;object-fit:contain;border-radius:12px;background:#f4f3ee}
+.feedback-copy{min-width:0;overflow-wrap:anywhere}
+.feedback-copy:only-child{grid-column:1/-1}
+.feedback-copy h2{margin:0 0 7px;font-size:18px}
+.feedback-copy p{margin:7px 0;color:var(--muted);font-size:13px;line-height:1.5;white-space:pre-wrap}
+.feedback-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.feedback-actions button{min-height:44px;font-size:12px}
+@media (max-width:760px){
+  .duplicate-content{padding:20px max(16px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+  .duplicate-photo{max-height:240px}
+  .duplicate-dialog .dialog-actions{grid-template-columns:1fr 1fr}
+  .duplicate-dialog .dialog-actions button{padding:0 10px;font-size:14px}
+  .country-name{gap:5px}.country-rank{flex-basis:28px;font-size:11px}
+  .feedback-card{grid-template-columns:80px minmax(0,1fr);gap:12px;padding:16px}
+  .feedback-photo{width:80px;height:100px}
+}
