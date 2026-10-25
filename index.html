@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://nominatim.openstreetmap.org" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="styles.css?v=8" />
-  <link rel="stylesheet" href="v6.css?v=6" />
+  <link rel="stylesheet" href="v6.css?v=8" />
   <link rel="stylesheet" href="sticker-carousel.css?v=1" />
 </head>
 <body>
@@ -205,6 +205,28 @@
     </section>
   </main>
 
+  <dialog id="duplicateDialog" class="sighting-dialog duplicate-dialog" aria-labelledby="duplicateTitle" aria-describedby="duplicateDescription">
+    <div class="duplicate-content">
+      <div class="dialog-header">
+        <div>
+          <p class="eyebrow">NEARBY STICKER</p>
+          <h1 id="duplicateTitle">Is this the same one?</h1>
+        </div>
+        <button id="closeDuplicateDialog" class="icon-button" type="button" aria-label="Close">×</button>
+      </div>
+      <p id="duplicateDescription" class="account-note">There is already a sticker within 1.5 metres of this spot. Are you sure it isn't the same one?</p>
+      <p id="duplicatePosition" class="account-note" role="status" aria-live="polite"></p>
+      <img id="duplicatePhoto" class="duplicate-photo" alt="Nearby sticker sighting" />
+      <p id="duplicatePhotoUnavailable" class="account-note" hidden>The photo is unavailable. Please check the sighting details below.</p>
+      <strong id="duplicatePlace" class="duplicate-place"></strong>
+      <p id="duplicateDetails" class="account-note"></p>
+      <div class="dialog-actions">
+        <button id="duplicateSame" class="secondary-button" type="button">It's the same</button>
+        <button id="duplicateDifferent" class="primary-button" type="button">It's not the same</button>
+      </div>
+    </div>
+  </dialog>
+
   <dialog id="sightingDialog" class="sighting-dialog">
     <form id="sightingForm">
       <div class="dialog-header">
@@ -351,7 +373,8 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0"></script>
   <script src="config.js?v=6"></script>
-  <script src="app-v6.js?v=8"></script>
+  <script src="map-utils.js?v=1"></script>
+  <script src="app-v6.js?v=10"></script>
   <script src="sticker-carousel.js?v=1"></script>
 </body>
 </html>
