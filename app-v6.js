@@ -27,8 +27,15 @@
   const LOCAL_CREATED_SPOTS_KEY = "nett-hier-created-spots-v1";
   const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
 
+  const DUPLICATE_RADIUS_METRES = 1.5;
+  const { distanceMetres, nearbyBounds, normalizeLongitude, ordinal } = window.NETT_HIER_UTILS;
+
   const state = {
     mode: "add",
+    draftVersion: 0,
+    checkingNearby: false,
+    approvedNearbyIds: new Set(),
+    duplicateConfirmation: null,
     editingId: null,
     reportingSpotId: null,
     adding: false,
@@ -72,7 +79,11 @@
     signedInEmail: $("signedInEmail"), signOutButton: $("signOutButton"),
     reportDialog: $("reportDialog"), reportForm: $("reportForm"), closeReportDialog: $("closeReportDialog"),
     cancelReport: $("cancelReport"), reportReason: $("reportReason"), otherReportField: $("otherReportField"),
-    reportComment: $("reportComment"), reportMessage: $("reportMessage"), submitReport: $("submitReport")
+    reportComment: $("reportComment"), reportMessage: $("reportMessage"), submitReport: $("submitReport"),
+    duplicateDialog: $("duplicateDialog"), closeDuplicateDialog: $("closeDuplicateDialog"),
+    duplicatePhoto: $("duplicatePhoto"), duplicatePhotoUnavailable: $("duplicatePhotoUnavailable"),
+    duplicatePlace: $("duplicatePlace"), duplicateDetails: $("duplicateDetails"), duplicatePosition: $("duplicatePosition"),
+    duplicateSame: $("duplicateSame"), duplicateDifferent: $("duplicateDifferent")
   };
 
   if (!window.L) {
@@ -217,6 +228,7 @@
         const { latitude: lat, longitude: lng } = pos.coords;
         map.setView([lat, lng], 16, { animate: true });
         resetLocationButton();
+        setAdding(false);
         openAddAt(lat, lng, true);
       },
       err => {
@@ -273,20 +285,120 @@
     els.detectedLocation.textContent = "Finding location…";
     state.locationLookupPromise = reverseGeocode(lat, lng)
       .then(loc => {
-        state.location = loc;
-        els.detectedLocation.textContent = loc.place;
+        if (state.selectedLatLng?.lat === lat && state.selectedLatLng?.lng === lng) {
+          state.location = loc;
+          els.detectedLocation.textContent = loc.place;
+        }
         return loc;
       })
       .catch(err => {
         console.warn(err);
         const fallback = { place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, country: null, countryCode: null };
-        state.location = fallback;
-        els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        if (state.selectedLatLng?.lat === lat && state.selectedLatLng?.lng === lng) {
+          state.location = fallback;
+          els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        }
         return fallback;
       });
   }
 
-  function openAddAt(lat, lng, fromDevice) {
+  async function findNearbySpots(lat, lng) {
+    let spots = state.spots;
+    if (live) {
+      // Query the shared data at plotting time, including pins outside the loaded map.
+      const bounds = nearbyBounds(lat, lng, DUPLICATE_RADIUS_METRES);
+      spots = [];
+      for (let offset = 0; ; offset += 500) {
+        let query = db.from("spots").select("*").gte("lat", bounds.south).lte("lat", bounds.north);
+        if (bounds.west !== null) {
+          query = bounds.west <= bounds.east
+            ? query.gte("lng", bounds.west).lte("lng", bounds.east)
+            : query.or(`lng.gte.${bounds.west},lng.lte.${bounds.east}`);
+        }
+        const result = await query.order("id").range(offset, offset + 499);
+        if (result.error) throw result.error;
+        spots.push(...(result.data || []));
+        if ((result.data || []).length < 500) break;
+      }
+    }
+    return spots.map(spot => ({ spot, distance: distanceMetres({ lat, lng }, spot) }))
+      .filter(item => item.distance <= DUPLICATE_RADIUS_METRES + 1e-8)
+      .sort((a, b) => a.distance - b.distance || String(a.spot.id).localeCompare(String(b.spot.id)));
+  }
+
+  function showDuplicateCandidate() {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    const { spot, distance } = pending.items[pending.index];
+    els.duplicatePosition.textContent = `Sticker ${pending.index + 1} of ${pending.items.length} · ${distance.toFixed(1)} metres away`;
+    els.duplicatePlace.textContent = spot.place || "Sticker sighting";
+    els.duplicateDetails.textContent = `${formatDate(spot.spotted_on)} · Added by ${spot.added_by || "Unknown"}${spot.note ? ` · ${spot.note}` : ""}`;
+    els.duplicatePhoto.hidden = !spot.image_url;
+    els.duplicatePhotoUnavailable.hidden = Boolean(spot.image_url);
+    if (spot.image_url) els.duplicatePhoto.src = spot.image_url;
+    else els.duplicatePhoto.removeAttribute("src");
+  }
+
+  function finishDuplicateConfirmation(allow) {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    state.duplicateConfirmation = null;
+    if (typeof els.duplicateDialog.close === "function") els.duplicateDialog.close();
+    else els.duplicateDialog.removeAttribute("open");
+    els.duplicatePhoto.removeAttribute("src");
+    pending.resolve(allow);
+  }
+
+  function confirmNearbySpots(items) {
+    const unchecked = items.filter(({ spot }) => !state.approvedNearbyIds.has(spot.id));
+    if (!unchecked.length) return Promise.resolve(true);
+    return new Promise(resolve => {
+      state.duplicateConfirmation = { items: unchecked, index: 0, resolve };
+      showDuplicateCandidate();
+      if (typeof els.duplicateDialog.showModal === "function") els.duplicateDialog.showModal();
+      else els.duplicateDialog.setAttribute("open", "");
+      els.duplicateSame.focus();
+    });
+  }
+
+  els.duplicatePhoto.addEventListener("error", () => {
+    els.duplicatePhoto.hidden = true;
+    els.duplicatePhotoUnavailable.hidden = false;
+  });
+  els.duplicateSame.addEventListener("click", () => finishDuplicateConfirmation(false));
+  els.closeDuplicateDialog.addEventListener("click", () => finishDuplicateConfirmation(false));
+  els.duplicateDialog.addEventListener("cancel", e => { e.preventDefault(); finishDuplicateConfirmation(false); });
+  els.duplicateDialog.addEventListener("click", e => { if (e.target === els.duplicateDialog) finishDuplicateConfirmation(false); });
+  els.duplicateDialog.addEventListener("close", () => { if (!els.duplicateDialog.open) finishDuplicateConfirmation(false); });
+  els.duplicateDifferent.addEventListener("click", () => {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    state.approvedNearbyIds.add(pending.items[pending.index].spot.id);
+    pending.index += 1;
+    if (pending.index === pending.items.length) finishDuplicateConfirmation(true);
+    else { showDuplicateCandidate(); els.duplicateSame.focus(); }
+  });
+
+  async function openAddAt(lat, lng, fromDevice) {
+    if (state.checkingNearby || els.dialog.open || state.duplicateConfirmation) return;
+    lng = normalizeLongitude(lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90) return;
+    state.checkingNearby = true;
+    state.approvedNearbyIds.clear();
+    try {
+      const nearby = await findNearbySpots(lat, lng);
+      if (!await confirmNearbySpots(nearby)) return;
+      prepareAddAt(lat, lng, fromDevice);
+    } catch (err) {
+      console.error(err);
+      setStatus("Could not check nearby stickers. Please try plotting again.");
+    } finally {
+      state.checkingNearby = false;
+    }
+  }
+
+  function prepareAddAt(lat, lng, fromDevice) {
+    state.draftVersion += 1;
     state.mode = "add";
     state.editingId = null;
     state.selectedLatLng = L.latLng(lat, lng);
@@ -321,6 +433,7 @@
       return;
     }
 
+    state.draftVersion += 1;
     state.mode = "edit";
     state.editingId = spot.id;
     state.selectedLatLng = L.latLng(Number(spot.lat), Number(spot.lng));
@@ -352,6 +465,8 @@
   }
 
   function closeDialog() {
+    state.draftVersion += 1;
+    finishDuplicateConfirmation(false);
     if (state.previewUrl) {
       URL.revokeObjectURL(state.previewUrl);
       state.previewUrl = null;
@@ -364,6 +479,7 @@
     state.location = null;
     state.locationLookupPromise = null;
     state.editingId = null;
+    state.approvedNearbyIds.clear();
     if (typeof els.dialog.close === "function") els.dialog.close();
     else els.dialog.removeAttribute("open");
   }
@@ -371,6 +487,7 @@
   els.closeDialog.addEventListener("click", closeDialog);
   els.cancelDialog.addEventListener("click", closeDialog);
   els.dialog.addEventListener("click", e => { if (e.target === els.dialog) closeDialog(); });
+  els.dialog.addEventListener("cancel", e => { e.preventDefault(); closeDialog(); });
 
   els.photoInput.addEventListener("change", () => {
     const file = els.photoInput.files?.[0];
@@ -420,6 +537,10 @@
 
   els.form.addEventListener("submit", async e => {
     e.preventDefault();
+    if (els.submitButton.disabled) return;
+    const draftVersion = state.draftVersion;
+    const submissionUserId = signedInUserId();
+    const isCurrentDraft = () => state.draftVersion === draftVersion && els.dialog.open;
     const lat = Number(state.selectedLatLng?.lat);
     const lng = Number(state.selectedLatLng?.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -444,7 +565,17 @@
     els.submitButton.textContent = state.mode === "edit" ? "Saving…" : "Uploading…";
 
     try {
+      if (state.mode === "add") {
+        const nearby = await findNearbySpots(lat, lng);
+        if (!isCurrentDraft()) return;
+        if (!await confirmNearbySpots(nearby)) {
+          if (isCurrentDraft()) closeDialog();
+          return;
+        }
+      }
       const loc = state.locationLookupPromise ? await state.locationLookupPromise : state.location;
+      if (!isCurrentDraft() || !state.selectedLatLng) return;
+      if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
       const common = {
         place: loc?.place || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
         country: loc?.country || null,
@@ -469,12 +600,15 @@
 
         if (result.error) throw result.error;
         replaceSpot(result.data);
+        if (!isCurrentDraft()) return;
         els.formMessage.textContent = "Updated!";
         els.formMessage.classList.add("success");
       } else {
         if (!live) throw new Error("Connect Supabase before adding shared sightings.");
 
         const compressed = await imageToBlob(file);
+        if (!isCurrentDraft()) return;
+        if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
         if (compressed.size > 6 * 1024 * 1024) throw new Error("That image is still too large after processing.");
         const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
         const bucket = config.photoBucket || "sticker-photos";
@@ -482,29 +616,34 @@
           contentType: "image/jpeg", cacheControl: "31536000", upsert: false
         });
         if (upload.error) throw upload.error;
+        if (!isCurrentDraft()) return;
+        if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
         const imageUrl = db.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
 
         const result = await db.from("spots").insert({
           lat, lng, ...common,
           sticker_type: "nett_hier",
           image_url: imageUrl,
-          owner_id: signedInUserId()
+          owner_id: submissionUserId
         }).select("*").single();
         if (result.error) throw result.error;
         rememberLocallyCreatedSpot(result.data.id);
         upsertSpot(result.data);
+        if (!isCurrentDraft()) return;
 
         els.formMessage.textContent = "Added — it is live worldwide!";
         els.formMessage.classList.add("success");
       }
 
       setTimeout(() => {
+        if (!isCurrentDraft()) return;
         closeDialog();
         switchView("map");
         map.setView([lat, lng], Math.max(map.getZoom(), 11), { animate: true });
       }, 400);
     } catch (err) {
       console.error(err);
+      if (!isCurrentDraft()) return;
       els.formMessage.classList.remove("success");
       els.formMessage.textContent = friendlyError(err, "Something went wrong.");
       els.submitButton.disabled = false;
@@ -907,9 +1046,15 @@
     }
 
     const max = ranking[0].count;
-    ranking.forEach(({name,count}) => {
+    let rank = 0;
+    ranking.forEach(({name,count}, index) => {
+      if (index === 0 || count !== ranking[index - 1].count) rank = index + 1;
       const row = document.createElement("div"); row.className = "country-row";
-      const countryName = document.createElement("div"); countryName.className = "country-name"; countryName.textContent = name;
+      const countryName = document.createElement("div"); countryName.className = "country-name";
+      const position = document.createElement("span"); position.className = "country-rank"; position.textContent = ordinal(rank);
+      const label = document.createElement("span"); label.className = "country-label"; label.textContent = name;
+      countryName.title = `${ordinal(rank)} · ${name}`;
+      countryName.append(position, label);
       const track = document.createElement("div"); track.className = "country-bar-track";
       const bar = document.createElement("div"); bar.className = "country-bar"; bar.style.width = `${Math.max(3,count/max*100)}%`;
       const val = document.createElement("div"); val.className = "country-count"; val.textContent = String(count);
