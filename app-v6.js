@@ -26,9 +26,13 @@
   const LOCAL_REPORTER_KEY = "nett-hier-reporter-token-v1";
   const LOCAL_CREATED_SPOTS_KEY = "nett-hier-created-spots-v1";
   const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
+  const DUPLICATE_RADIUS_METRES = 1.5;
+  const { distanceMetres, nearbyBounds, normalizeLongitude, ordinal } = window.NETT_HIER_UTILS;
 
   const state = {
     mode: "add",
+    moveOnly: false,
+    draftVersion: 0,
     editingId: null,
     reportingSpotId: null,
     adding: false,
@@ -40,6 +44,14 @@
     realtimeChannel: null,
     authSubscription: null,
     user: null,
+    isAdmin: false,
+    authVersion: 0,
+    movingSpotId: null,
+    checkingNearby: false,
+    approvedNearbyIds: new Set(),
+    duplicateConfirmation: null,
+    feedbackRequest: 0,
+    feedbackReports: [],
     geocodeCache: new Map(),
     localCreatedSpotIds: loadLocalCreatedSpotIds(),
     reporterToken: getOrCreateReporterToken()
@@ -50,6 +62,9 @@
     brandHome: $("brandHome"),
     tabButtons: [...document.querySelectorAll(".tab-button")],
     mapView: $("mapView"), statsView: $("statsView"), stickersView: $("stickersView"),
+    feedbackView: $("feedbackView"), feedbackTab: $("feedbackTab"),
+    feedbackFilter: $("feedbackFilter"), refreshFeedback: $("refreshFeedback"),
+    feedbackMessage: $("feedbackMessage"), feedbackList: $("feedbackList"),
     mapShell: document.querySelector(".map-shell"),
     spotCount: $("spotCount"), addButton: $("addButton"), myLocationButton: $("myLocationButton"),
     accountButton: $("accountButton"),
@@ -63,6 +78,7 @@
     photoFieldWrap: $("photoFieldWrap"), photoInput: $("photoInput"),
     photoPreviewWrap: $("photoPreviewWrap"), photoPreview: $("photoPreview"),
     dateInput: $("dateInput"), noteInput: $("noteInput"), addedByInput: $("addedByInput"),
+    metadataFields: $("metadataFields"),
     formMessage: $("formMessage"), submitButton: $("submitButton"),
     accountDialog: $("accountDialog"), closeAccountDialog: $("closeAccountDialog"),
     accountForm: $("accountForm"), accountFields: $("accountFields"),
@@ -72,7 +88,11 @@
     signedInEmail: $("signedInEmail"), signOutButton: $("signOutButton"),
     reportDialog: $("reportDialog"), reportForm: $("reportForm"), closeReportDialog: $("closeReportDialog"),
     cancelReport: $("cancelReport"), reportReason: $("reportReason"), otherReportField: $("otherReportField"),
-    reportComment: $("reportComment"), reportMessage: $("reportMessage"), submitReport: $("submitReport")
+    reportComment: $("reportComment"), reportMessage: $("reportMessage"), submitReport: $("submitReport"),
+    duplicateDialog: $("duplicateDialog"), closeDuplicateDialog: $("closeDuplicateDialog"),
+    duplicatePhoto: $("duplicatePhoto"), duplicatePhotoUnavailable: $("duplicatePhotoUnavailable"),
+    duplicatePlace: $("duplicatePlace"), duplicateDetails: $("duplicateDetails"), duplicatePosition: $("duplicatePosition"),
+    duplicateSame: $("duplicateSame"), duplicateDifferent: $("duplicateDifferent")
   };
 
   if (!window.L) {
@@ -172,9 +192,11 @@
   setStatus(live ? "Connecting to shared map…" : "Demo mode");
 
   function switchView(name) {
+    if (name === "feedback" && !state.isAdmin) name = "map";
     els.mapView.hidden = name !== "map";
     els.statsView.hidden = name !== "stats";
     els.stickersView.hidden = name !== "stickers";
+    els.feedbackView.hidden = name !== "feedback";
     els.tabButtons.forEach(btn => {
       const active = btn.dataset.view === name;
       btn.classList.toggle("active", active);
@@ -182,6 +204,7 @@
     });
     if (name === "map") setTimeout(resizeMap, 20);
     if (name === "stats") renderStats();
+    if (name === "feedback") loadFeedback();
   }
 
   els.tabButtons.forEach(btn => btn.addEventListener("click", () => switchView(btn.dataset.view)));
@@ -189,21 +212,28 @@
 
   function setAdding(on) {
     state.adding = !!on;
+    if (!on) state.movingSpotId = null;
     els.mapShell.classList.toggle("adding", state.adding);
     els.addModeNotice.hidden = !state.adding;
     els.mapIntro.hidden = state.adding;
+    els.addModeNotice.querySelector("span").textContent = state.movingSpotId
+      ? "Tap the new location for this sticker, then save the change."
+      : "Plot the exact spot where you found it — not simply the nearest city. Use “Plot my location” if needed.";
   }
 
   els.addButton.addEventListener("click", () => {
     switchView("map");
+    state.movingSpotId = null;
     setAdding(!state.adding);
   });
   els.cancelAddMode.addEventListener("click", () => setAdding(false));
 
   map.on("click", e => {
     if (!state.adding) return;
+    const movingSpot = state.spots.find(s => s.id === state.movingSpotId);
     setAdding(false);
-    openAddAt(e.latlng.lat, e.latlng.lng, false);
+    if (movingSpot) openEdit(movingSpot, e.latlng.lat, normalizeLongitude(e.latlng.lng));
+    else openAddAt(e.latlng.lat, e.latlng.lng, false);
   });
 
   els.myLocationButton.addEventListener("click", () => {
@@ -217,7 +247,10 @@
         const { latitude: lat, longitude: lng } = pos.coords;
         map.setView([lat, lng], 16, { animate: true });
         resetLocationButton();
-        openAddAt(lat, lng, true);
+        const movingSpot = state.spots.find(s => s.id === state.movingSpotId);
+        setAdding(false);
+        if (movingSpot) openEdit(movingSpot, lat, lng);
+        else openAddAt(lat, lng, true);
       },
       err => {
         console.error(err);
@@ -273,21 +306,122 @@
     els.detectedLocation.textContent = "Finding location…";
     state.locationLookupPromise = reverseGeocode(lat, lng)
       .then(loc => {
-        state.location = loc;
-        els.detectedLocation.textContent = loc.place;
+        if (state.selectedLatLng?.lat === lat && state.selectedLatLng?.lng === lng) {
+          state.location = loc;
+          els.detectedLocation.textContent = loc.place;
+        }
         return loc;
       })
       .catch(err => {
         console.warn(err);
         const fallback = { place: `${lat.toFixed(5)}, ${lng.toFixed(5)}`, country: null, countryCode: null };
-        state.location = fallback;
-        els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        if (state.selectedLatLng?.lat === lat && state.selectedLatLng?.lng === lng) {
+          state.location = fallback;
+          els.detectedLocation.textContent = "Location name unavailable — coordinates will be saved.";
+        }
         return fallback;
       });
   }
 
-  function openAddAt(lat, lng, fromDevice) {
+  async function findNearbySpots(lat, lng) {
+    let spots = state.spots;
+    if (live) {
+      // Query the shared data at plotting time, including pins outside the loaded map.
+      const bounds = nearbyBounds(lat, lng, DUPLICATE_RADIUS_METRES);
+      spots = [];
+      for (let offset = 0; ; offset += 500) {
+        let query = db.from("spots").select("*").gte("lat", bounds.south).lte("lat", bounds.north);
+        if (bounds.west !== null) {
+          query = bounds.west <= bounds.east
+            ? query.gte("lng", bounds.west).lte("lng", bounds.east)
+            : query.or(`lng.gte.${bounds.west},lng.lte.${bounds.east}`);
+        }
+        const result = await query.order("id").range(offset, offset + 499);
+        if (result.error) throw result.error;
+        spots.push(...(result.data || []));
+        if ((result.data || []).length < 500) break;
+      }
+    }
+    return spots.map(spot => ({ spot, distance: distanceMetres({ lat, lng }, spot) }))
+      .filter(item => item.distance <= DUPLICATE_RADIUS_METRES + 1e-8)
+      .sort((a, b) => a.distance - b.distance || String(a.spot.id).localeCompare(String(b.spot.id)));
+  }
+
+  function showDuplicateCandidate() {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    const { spot, distance } = pending.items[pending.index];
+    els.duplicatePosition.textContent = `Sticker ${pending.index + 1} of ${pending.items.length} · ${distance.toFixed(1)} metres away`;
+    els.duplicatePlace.textContent = spot.place || "Sticker sighting";
+    els.duplicateDetails.textContent = `${formatDate(spot.spotted_on)} · Added by ${spot.added_by || "Unknown"}${spot.note ? ` · ${spot.note}` : ""}`;
+    els.duplicatePhoto.hidden = !spot.image_url;
+    els.duplicatePhotoUnavailable.hidden = Boolean(spot.image_url);
+    if (spot.image_url) els.duplicatePhoto.src = spot.image_url;
+    else els.duplicatePhoto.removeAttribute("src");
+  }
+
+  function finishDuplicateConfirmation(allow) {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    state.duplicateConfirmation = null;
+    if (typeof els.duplicateDialog.close === "function") els.duplicateDialog.close();
+    else els.duplicateDialog.removeAttribute("open");
+    els.duplicatePhoto.removeAttribute("src");
+    pending.resolve(allow);
+  }
+
+  function confirmNearbySpots(items) {
+    const unchecked = items.filter(({ spot }) => !state.approvedNearbyIds.has(spot.id));
+    if (!unchecked.length) return Promise.resolve(true);
+    return new Promise(resolve => {
+      state.duplicateConfirmation = { items: unchecked, index: 0, resolve };
+      showDuplicateCandidate();
+      if (typeof els.duplicateDialog.showModal === "function") els.duplicateDialog.showModal();
+      else els.duplicateDialog.setAttribute("open", "");
+      els.duplicateSame.focus();
+    });
+  }
+
+  els.duplicatePhoto.addEventListener("error", () => {
+    els.duplicatePhoto.hidden = true;
+    els.duplicatePhotoUnavailable.hidden = false;
+  });
+  els.duplicateSame.addEventListener("click", () => finishDuplicateConfirmation(false));
+  els.closeDuplicateDialog.addEventListener("click", () => finishDuplicateConfirmation(false));
+  els.duplicateDialog.addEventListener("cancel", e => { e.preventDefault(); finishDuplicateConfirmation(false); });
+  els.duplicateDialog.addEventListener("click", e => { if (e.target === els.duplicateDialog) finishDuplicateConfirmation(false); });
+  els.duplicateDialog.addEventListener("close", () => { if (!els.duplicateDialog.open) finishDuplicateConfirmation(false); });
+  els.duplicateDifferent.addEventListener("click", () => {
+    const pending = state.duplicateConfirmation;
+    if (!pending) return;
+    state.approvedNearbyIds.add(pending.items[pending.index].spot.id);
+    pending.index += 1;
+    if (pending.index === pending.items.length) finishDuplicateConfirmation(true);
+    else { showDuplicateCandidate(); els.duplicateSame.focus(); }
+  });
+
+  async function openAddAt(lat, lng, fromDevice) {
+    if (state.checkingNearby || els.dialog.open || state.duplicateConfirmation) return;
+    lng = normalizeLongitude(lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90) return;
+    state.checkingNearby = true;
+    state.approvedNearbyIds.clear();
+    try {
+      const nearby = await findNearbySpots(lat, lng);
+      if (!await confirmNearbySpots(nearby)) return;
+      prepareAddAt(lat, lng, fromDevice);
+    } catch (err) {
+      console.error(err);
+      setStatus("Could not check nearby stickers. Please try plotting again.");
+    } finally {
+      state.checkingNearby = false;
+    }
+  }
+
+  function prepareAddAt(lat, lng, fromDevice) {
+    state.draftVersion += 1;
     state.mode = "add";
+    state.moveOnly = false;
     state.editingId = null;
     state.selectedLatLng = L.latLng(lat, lng);
 
@@ -296,6 +430,9 @@
     els.submitButton.textContent = "Add to the map";
     els.photoFieldWrap.hidden = false;
     els.photoInput.required = true;
+    els.metadataFields.hidden = false;
+    els.addedByInput.required = true;
+    els.dateInput.required = true;
     els.form.reset();
     els.dateInput.value = today();
     els.photoPreviewWrap.hidden = true;
@@ -315,18 +452,38 @@
     return Boolean(userId && spot?.owner_id && userId === spot.owner_id);
   }
 
-  function openEdit(spot) {
-    if (!isOwnedByCurrentUser(spot)) {
+  function canManageSpot(spot) {
+    return Boolean(signedInUserId() && (state.isAdmin || isOwnedByCurrentUser(spot)));
+  }
+
+  function startMove(spot) {
+    if (!state.isAdmin || !signedInUserId()) return;
+    map.closePopup();
+    switchView("map");
+    state.movingSpotId = spot.id;
+    setAdding(true);
+    map.setView([Number(spot.lat), Number(spot.lng)], Math.max(map.getZoom(), 18));
+  }
+
+  function openEdit(spot, lat = Number(spot.lat), lng = Number(spot.lng)) {
+    if (!canManageSpot(spot)) {
       setStatus("You can only edit sightings you added while signed in.");
       return;
     }
 
+    const moving = lat !== Number(spot.lat) || lng !== Number(spot.lng);
+    if (moving && !state.isAdmin) return;
+    state.draftVersion += 1;
     state.mode = "edit";
+    state.moveOnly = moving;
     state.editingId = spot.id;
-    state.selectedLatLng = L.latLng(Number(spot.lat), Number(spot.lng));
+    state.selectedLatLng = L.latLng(lat, lng);
+    els.metadataFields.hidden = moving;
+    els.addedByInput.required = !moving;
+    els.dateInput.required = !moving;
 
     els.dialogEyebrow.textContent = "EDIT SIGHTING";
-    els.dialogTitle.textContent = "Edit this sticker";
+    els.dialogTitle.textContent = moving ? "Move this sticker" : "Edit this sticker";
     els.submitButton.textContent = "Save changes";
     els.photoFieldWrap.hidden = true;
     els.photoInput.required = false;
@@ -334,12 +491,12 @@
     els.noteInput.value = spot.note || "";
     els.dateInput.value = spot.spotted_on || today();
     els.addedByInput.value = spot.added_by || "";
-    els.coordinateText.textContent = `Pinned at ${Number(spot.lat).toFixed(5)}, ${Number(spot.lng).toFixed(5)}.`;
+    els.coordinateText.textContent = `${moving ? "New location" : "Pinned at"} ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
 
     els.photoPreview.src = spot.image_url;
     els.photoPreviewWrap.hidden = !spot.image_url;
 
-    beginLocationLookup(Number(spot.lat), Number(spot.lng));
+    beginLocationLookup(lat, lng);
     openDialog();
   }
 
@@ -352,6 +509,8 @@
   }
 
   function closeDialog() {
+    state.draftVersion += 1;
+    finishDuplicateConfirmation(false);
     if (state.previewUrl) {
       URL.revokeObjectURL(state.previewUrl);
       state.previewUrl = null;
@@ -364,6 +523,8 @@
     state.location = null;
     state.locationLookupPromise = null;
     state.editingId = null;
+    state.moveOnly = false;
+    state.approvedNearbyIds.clear();
     if (typeof els.dialog.close === "function") els.dialog.close();
     else els.dialog.removeAttribute("open");
   }
@@ -371,6 +532,7 @@
   els.closeDialog.addEventListener("click", closeDialog);
   els.cancelDialog.addEventListener("click", closeDialog);
   els.dialog.addEventListener("click", e => { if (e.target === els.dialog) closeDialog(); });
+  els.dialog.addEventListener("cancel", e => { e.preventDefault(); closeDialog(); });
 
   els.photoInput.addEventListener("change", () => {
     const file = els.photoInput.files?.[0];
@@ -420,12 +582,16 @@
 
   els.form.addEventListener("submit", async e => {
     e.preventDefault();
+    if (els.submitButton.disabled) return;
+    const draftVersion = state.draftVersion;
+    const submissionUserId = signedInUserId();
+    const isCurrentDraft = () => state.draftVersion === draftVersion && els.dialog.open;
     const lat = Number(state.selectedLatLng?.lat);
     const lng = Number(state.selectedLatLng?.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
     const addedBy = safeText(els.addedByInput.value, 80);
-    if (!addedBy) {
+    if (!addedBy && !state.moveOnly) {
       els.formMessage.textContent = "Please enter your name.";
       return;
     }
@@ -444,37 +610,55 @@
     els.submitButton.textContent = state.mode === "edit" ? "Saving…" : "Uploading…";
 
     try {
+      if (state.mode === "add") {
+        const nearby = await findNearbySpots(lat, lng);
+        if (!isCurrentDraft()) return;
+        if (!await confirmNearbySpots(nearby)) {
+          if (isCurrentDraft()) closeDialog();
+          return;
+        }
+      }
       const loc = state.locationLookupPromise ? await state.locationLookupPromise : state.location;
+      if (!isCurrentDraft() || !state.selectedLatLng) return;
+      if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
       const common = {
         place: loc?.place || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
         country: loc?.country || null,
-        country_code: normalizeCountryCode(loc?.countryCode),
+        country_code: normalizeCountryCode(loc?.countryCode)
+      };
+      if (!state.moveOnly) Object.assign(common, {
         note: safeText(els.noteInput.value, 500) || null,
         spotted_on: els.dateInput.value || today(),
         added_by: addedBy
-      };
+      });
 
       if (state.mode === "edit") {
         if (!live) throw new Error("Editing requires the live shared map.");
         const spot = state.spots.find(s => s.id === state.editingId);
-        if (!spot || !isOwnedByCurrentUser(spot)) throw new Error("You can only edit your own sightings.");
+        if (!spot || !canManageSpot(spot)) throw new Error("You do not have permission to edit that sighting.");
+        if (state.isAdmin && (Number(spot.lat) !== lat || Number(spot.lng) !== lng)) {
+          common.lat = lat;
+          common.lng = lng;
+        }
 
-        const result = await db
+        let query = db
           .from("spots")
           .update(common)
-          .eq("id", state.editingId)
-          .eq("owner_id", signedInUserId())
-          .select("*")
-          .single();
+          .eq("id", state.editingId);
+        if (!state.isAdmin) query = query.eq("owner_id", signedInUserId());
+        const result = await query.select("*").single();
 
         if (result.error) throw result.error;
         replaceSpot(result.data);
+        if (!isCurrentDraft()) return;
         els.formMessage.textContent = "Updated!";
         els.formMessage.classList.add("success");
       } else {
         if (!live) throw new Error("Connect Supabase before adding shared sightings.");
 
         const compressed = await imageToBlob(file);
+        if (!isCurrentDraft()) return;
+        if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
         if (compressed.size > 6 * 1024 * 1024) throw new Error("That image is still too large after processing.");
         const fileName = `${Date.now()}-${crypto.randomUUID()}.jpg`;
         const bucket = config.photoBucket || "sticker-photos";
@@ -482,29 +666,34 @@
           contentType: "image/jpeg", cacheControl: "31536000", upsert: false
         });
         if (upload.error) throw upload.error;
+        if (!isCurrentDraft()) return;
+        if (signedInUserId() !== submissionUserId) throw new Error("Your account changed. Please submit again.");
         const imageUrl = db.storage.from(bucket).getPublicUrl(fileName).data.publicUrl;
 
         const result = await db.from("spots").insert({
           lat, lng, ...common,
           sticker_type: "nett_hier",
           image_url: imageUrl,
-          owner_id: signedInUserId()
+          owner_id: submissionUserId
         }).select("*").single();
         if (result.error) throw result.error;
         rememberLocallyCreatedSpot(result.data.id);
         upsertSpot(result.data);
+        if (!isCurrentDraft()) return;
 
         els.formMessage.textContent = "Added — it is live worldwide!";
         els.formMessage.classList.add("success");
       }
 
       setTimeout(() => {
+        if (!isCurrentDraft()) return;
         closeDialog();
         switchView("map");
         map.setView([lat, lng], Math.max(map.getZoom(), 11), { animate: true });
       }, 400);
     } catch (err) {
       console.error(err);
+      if (!isCurrentDraft()) return;
       els.formMessage.classList.remove("success");
       els.formMessage.textContent = friendlyError(err, "Something went wrong.");
       els.submitButton.disabled = false;
@@ -529,19 +718,19 @@
   }
 
   async function deleteSpot(spot) {
-    if (!live || !isOwnedByCurrentUser(spot)) {
+    if (!live || !canManageSpot(spot)) {
       setStatus("You can only delete sightings you added while signed in.");
       return;
     }
     if (!confirm("Delete this sighting? This cannot be undone.")) return;
 
     try {
-      const result = await db
+      let query = db
         .from("spots")
         .delete()
-        .eq("id", spot.id)
-        .eq("owner_id", signedInUserId())
-        .select("id");
+        .eq("id", spot.id);
+      if (!state.isAdmin) query = query.eq("owner_id", signedInUserId());
+      const result = await query.select("id");
       if (result.error) throw result.error;
       if (!result.data?.length) throw new Error("You do not have permission to delete that sighting.");
       removeSpot(spot.id);
@@ -616,7 +805,7 @@
       };
       const result = await db.from("spot_reports").insert(payload);
       if (result.error) throw result.error;
-      els.reportMessage.textContent = "Report submitted. The sighting has not been changed.";
+      els.reportMessage.textContent = "Report sent to the admin for review. Thank you!";
       els.reportMessage.classList.add("success");
       els.submitReport.textContent = "Submitted";
       setTimeout(closeReportDialog, 700);
@@ -664,7 +853,7 @@
     by.textContent = `Added by — ${spot.added_by || "Unknown"}`;
     card.appendChild(by);
 
-    if (isOwnedByCurrentUser(spot)) {
+    if (canManageSpot(spot)) {
       const actions = document.createElement("div");
       actions.className = "popup-actions";
 
@@ -684,6 +873,14 @@
       del.addEventListener("click", () => deleteSpot(spot));
 
       actions.append(edit, del);
+      if (state.isAdmin) {
+        const move = document.createElement("button");
+        move.type = "button";
+        move.className = "popup-move-button";
+        move.textContent = "Move point";
+        move.addEventListener("click", () => startMove(spot));
+        actions.appendChild(move);
+      }
       card.appendChild(actions);
     } else if (!state.localCreatedSpotIds.has(spot.id)) {
       const report = document.createElement("button");
@@ -907,14 +1104,182 @@
     }
 
     const max = ranking[0].count;
-    ranking.forEach(({name,count}) => {
+    let rank = 0;
+    ranking.forEach(({name,count}, index) => {
+      if (index === 0 || count !== ranking[index - 1].count) rank = index + 1;
       const row = document.createElement("div"); row.className = "country-row";
-      const countryName = document.createElement("div"); countryName.className = "country-name"; countryName.textContent = name;
+      const countryName = document.createElement("div"); countryName.className = "country-name";
+      const position = document.createElement("span"); position.className = "country-rank"; position.textContent = ordinal(rank);
+      const label = document.createElement("span"); label.className = "country-label"; label.textContent = name;
+      countryName.title = `${ordinal(rank)} · ${name}`;
+      countryName.append(position, label);
       const track = document.createElement("div"); track.className = "country-bar-track";
       const bar = document.createElement("div"); bar.className = "country-bar"; bar.style.width = `${Math.max(3,count/max*100)}%`;
       const val = document.createElement("div"); val.className = "country-count"; val.textContent = String(count);
       track.appendChild(bar); row.append(countryName,track,val); els.countryRanking.appendChild(row);
     });
+  }
+
+  async function loadFeedback() {
+    if (!live || !state.isAdmin) return;
+    const request = ++state.feedbackRequest;
+    const authVersion = state.authVersion;
+    els.refreshFeedback.disabled = true;
+    els.feedbackMessage.textContent = "Loading reports…";
+    try {
+      const reports = [];
+      for (let offset = 0; ; offset += 500) {
+        const result = await db.from("spot_reports")
+          .select("id,spot_id,reason,comment,reported_at,status,spots(*)")
+          .order("reported_at", { ascending: false }).order("id")
+          .range(offset, offset + 499);
+        if (request !== state.feedbackRequest || authVersion !== state.authVersion || !state.isAdmin) return;
+        if (result.error) throw result.error;
+        reports.push(...(result.data || []));
+        if ((result.data || []).length < 500) break;
+      }
+      state.feedbackReports = reports;
+      els.feedbackMessage.textContent = "";
+      renderFeedback();
+    } catch (err) {
+      console.error(err);
+      if (request === state.feedbackRequest && authVersion === state.authVersion && state.isAdmin) {
+        els.feedbackMessage.textContent = friendlyError(err, "Could not load reports. Please refresh.");
+      }
+    } finally {
+      if (request === state.feedbackRequest) els.refreshFeedback.disabled = false;
+    }
+  }
+
+  function renderFeedback() {
+    els.feedbackList.replaceChildren();
+    if (!state.isAdmin) return;
+    const filter = els.feedbackFilter.value;
+    const reports = state.feedbackReports.filter(report => filter === "all" || report.status === filter);
+    if (!reports.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = filter === "all" ? "No reports yet." : `No ${filter} reports.`;
+      els.feedbackList.appendChild(empty);
+      return;
+    }
+    reports.forEach(report => {
+      const card = document.createElement("article");
+      card.className = "feedback-card";
+      const spot = report.spots;
+      if (spot?.image_url) {
+        const photo = document.createElement("img");
+        photo.className = "feedback-photo";
+        photo.src = spot.image_url;
+        photo.alt = `Reported sticker${spot.place ? ` in ${spot.place}` : ""}`;
+        photo.loading = "lazy";
+        card.appendChild(photo);
+      }
+      const copy = document.createElement("div");
+      copy.className = "feedback-copy";
+      const reason = document.createElement("h2");
+      reason.textContent = report.reason;
+      const place = document.createElement("p");
+      place.textContent = spot?.place || "Sighting no longer available";
+      const detail = document.createElement("p");
+      const reported = new Date(report.reported_at);
+      detail.textContent = `${report.status === "resolved" ? "Resolved" : "Open"} · Reported ${Number.isNaN(reported.getTime()) ? "date unavailable" : reported.toLocaleString()}`;
+      copy.append(reason, place, detail);
+      if (report.comment) {
+        const comment = document.createElement("p");
+        comment.textContent = report.comment;
+        copy.appendChild(comment);
+      }
+      const actions = document.createElement("div");
+      actions.className = "feedback-actions";
+      if (spot) {
+        const view = document.createElement("button");
+        view.type = "button";
+        view.className = "secondary-button";
+        view.textContent = "View on map";
+        view.addEventListener("click", () => {
+          if (!state.isAdmin) return;
+          switchView("map");
+          upsertSpot(spot);
+          map.setView([Number(spot.lat), Number(spot.lng)], 18);
+          showSighting(spot.id, [spot.id]);
+        });
+        actions.appendChild(view);
+      }
+      const resolve = document.createElement("button");
+      resolve.type = "button";
+      resolve.className = "primary-button";
+      resolve.textContent = report.status === "resolved" ? "Reopen" : "Mark as resolved";
+      resolve.addEventListener("click", () => updateReportStatus(report, resolve));
+      actions.appendChild(resolve);
+      copy.appendChild(actions);
+      card.appendChild(copy);
+      els.feedbackList.appendChild(card);
+    });
+  }
+
+  async function updateReportStatus(report, button) {
+    if (!live || !state.isAdmin || button.disabled) return;
+    const authVersion = state.authVersion;
+    button.disabled = true;
+    els.feedbackMessage.textContent = "";
+    const status = report.status === "resolved" ? "open" : "resolved";
+    try {
+      const result = await db.from("spot_reports").update({ status }).eq("id", report.id).select("id,status").single();
+      if (authVersion !== state.authVersion || !state.isAdmin) return;
+      if (result.error) throw result.error;
+      report.status = result.data.status;
+      renderFeedback();
+    } catch (err) {
+      console.error(err);
+      if (authVersion === state.authVersion && state.isAdmin) els.feedbackMessage.textContent = friendlyError(err, "Could not update this report.");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  els.refreshFeedback.addEventListener("click", loadFeedback);
+  els.feedbackFilter.addEventListener("change", renderFeedback);
+
+  function clearAdminState() {
+    state.isAdmin = false;
+    state.feedbackRequest += 1;
+    state.feedbackReports = [];
+    els.feedbackList.replaceChildren();
+    els.feedbackMessage.textContent = "";
+    els.refreshFeedback.disabled = false;
+    if (state.movingSpotId) setAdding(false);
+    if (!els.feedbackView.hidden) switchView("map");
+  }
+
+  async function refreshAdminAccess(version, userId) {
+    try {
+      const result = await db.from("site_admins").select("user_id").eq("user_id", userId).maybeSingle();
+      if (version !== state.authVersion) return;
+      if (result.error) throw result.error;
+      state.isAdmin = Boolean(result.data?.user_id === userId);
+      if (!state.isAdmin) clearAdminState();
+    } catch (err) {
+      // Older databases can keep using ordinary accounts until the admin upgrade is applied.
+      if (version !== state.authVersion) return;
+      console.warn("Admin access could not be checked.", err);
+      clearAdminState();
+    }
+    updateAccountUi();
+    renderMarkers();
+  }
+
+  function applyAuthUser(user) {
+    const previousId = signedInUserId();
+    state.user = user;
+    const userId = signedInUserId();
+    const version = ++state.authVersion;
+    if (!userId || userId !== previousId) clearAdminState();
+    updateAccountUi();
+    renderMarkers();
+    if (state.mode === "edit" && els.dialog.open && !canManageSpot(state.spots.find(s => s.id === state.editingId))) closeDialog();
+    // Run database work outside Supabase's synchronous auth callback to avoid auth locks.
+    if (live && userId) setTimeout(() => refreshAdminAccess(version, userId), 0);
   }
 
   function openAccountDialog() {
@@ -938,6 +1303,7 @@
     els.accountFields.hidden = signedIn;
     els.signedInPanel.hidden = !signedIn;
     els.signedInEmail.textContent = signedIn ? safeText(state.user.email, 160) : "";
+    els.feedbackTab.hidden = !state.isAdmin;
   }
 
   els.accountButton.addEventListener("click", openAccountDialog);
@@ -1032,20 +1398,15 @@
     try {
       const sessionResult = await db.auth.getSession();
       if (sessionResult.error) throw sessionResult.error;
-      state.user = sessionResult.data.session?.user || null;
-      updateAccountUi();
-      renderMarkers();
+      applyAuthUser(sessionResult.data.session?.user || null);
 
       const authResult = db.auth.onAuthStateChange((_event, session) => {
-        state.user = session?.user || null;
-        updateAccountUi();
-        renderMarkers();
+        applyAuthUser(session?.user || null);
       });
       state.authSubscription = authResult.data?.subscription || null;
     } catch (err) {
       console.error(err);
-      state.user = null;
-      updateAccountUi();
+      applyAuthUser(null);
     }
   }
 
