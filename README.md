@@ -24,7 +24,17 @@ V6 keeps the existing map, styling and stored sightings, while adding optional a
 - Photo uploads remain public/free but are restricted to the existing JPEG bucket, 6 MB bucket limit and generated `.jpg` filename pattern.
 - The browser uses the Supabase publishable key only; no privileged service key is exposed.
 
-## Deploy / upgrade
+## Sightings availability and backups
+
+The database is on Supabase's Free plan, which can pause low-activity projects. A pause temporarily disconnects the API and photos; it does not delete sightings. Resume the existing project in the Supabase dashboard to restore service. Supabase Pro removes inactivity pausing; this change does not add a paid subscription.
+
+The map now keeps the last successfully loaded sightings in a cache specific to this project. It also loads the latest public backup from GitHub when the database is unavailable, including backed-up photos. Saved copies show their date and a reconnecting message. Live results replace saved data only after every page succeeds, including a genuinely empty result after deletions. The map retries failed reads after 30 seconds, refreshes every five minutes while visible, and refreshes when returning to the page or reconnecting. Realtime changes during a refresh are retained.
+
+The **Back up public sightings** GitHub Actions workflow runs daily at 09:23 UTC and can be run manually. It queries the database independently of website visits, backs up every public sighting and its JPEG photo, and commits a dated snapshot to `data/sightings.json`. Failed or incomplete reads never replace the previous successful snapshot. Only public map fields and public photos are included; account data, ownership IDs and reports are excluded. The browser reads the current GitHub copy directly so backup updates do not depend on Pages rebuilds. Daily dated commits also keep repository activity current; GitHub can disable schedules on inactive public repositories, so the saved copy remains the fallback if a workflow stops.
+
+Run `node scripts/backup-sightings.cjs` to refresh a backup locally. It needs only the existing publishable key in `config.js`, with no privileged credentials. Run `node --test tests/*.test.cjs` for backup integrity, pagination and cache checks. These tests use isolated data and never modify production.
+
+## Database upgrade
 
 The live project needs the database migration in `supabase_update_v6.sql` applied once, then the V6 frontend files can be deployed.
 

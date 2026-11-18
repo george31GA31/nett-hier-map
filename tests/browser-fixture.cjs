@@ -25,6 +25,7 @@ async function setup(page, options = {}) {
   await page.route('https://tile.openstreetmap.org/**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
   await page.route('https://ukkvukdzmdzpertbjjnp.supabase.co/**', route => route.fulfill({ contentType: 'image/png', body: PNG }));
   await page.route('https://nominatim.openstreetmap.org/**', route => route.fulfill({ json: { address: { city: 'Moved location', country: 'Malta', country_code: 'mt' } } }));
+  await page.route('https://raw.githubusercontent.com/george31GA31/nett-hier-map/**', route => route.fulfill({status: 404, body: ''}));
   await page.addInitScript(({ options, ADMIN, OWNER }) => {
     const userFor = role => role ? { id: role === 'admin' ? ADMIN : OWNER, email: `${role}@example.com` } : null;
     const data = window.__test = {
@@ -49,6 +50,7 @@ async function setup(page, options = {}) {
       order(field, opts = {}) { this.orders.push([field, opts.ascending !== false]); return this; }
       range(start, end) { this.rangeValue = [start, end]; return this; }
       limit(count) { this.rangeValue = [0, count - 1]; return this; }
+      abortSignal() { return this; }
       insert(payload) { this.operation = 'insert'; this.payload = payload; return this; }
       update(payload) { this.operation = 'update'; this.payload = payload; return this; }
       delete() { this.operation = 'delete'; return this; }

@@ -25,6 +25,13 @@
 
   const LOCAL_REPORTER_KEY = "nett-hier-reporter-token-v1";
   const LOCAL_CREATED_SPOTS_KEY = "nett-hier-created-spots-v1";
+  const snapshotRoot = "https://raw.githubusercontent.com/george31GA31/nett-hier-map/main/";
+  const { validateSnapshot, readAllSpots, readCache, writeCache } = window.NETT_HIER_SIGHTINGS;
+  let sharedLoaded = false;
+  let savedAt = null;
+  let loadingSpots = null;
+  let refreshTimer = null;
+  let changesWhileLoading = null;
   const MAX_SOURCE_IMAGE_BYTES = 20 * 1024 * 1024;
 
   const DUPLICATE_RADIUS_METRES = 1.5;
@@ -779,6 +786,10 @@
       img.addEventListener("load", () => {
         if (sightingPopup.getContent() === card) sightingPopup.update();
       });
+      img.addEventListener("error", () => {
+        const backup = backupPhotoUrl(spot);
+        if (backup && img.src !== backup) img.src = backup;
+      }, { once: true });
       img.src = spot.image_url;
       card.appendChild(img);
     }
@@ -1001,18 +1012,22 @@
   }
 
   function upsertSpot(spot) {
+    changesWhileLoading?.set(spot.id, spot);
     const i = state.spots.findIndex(s => s.id === spot.id);
     if (i >= 0) state.spots[i] = spot;
     else state.spots.unshift(spot);
     renderMarkers();
+    cacheCurrentSpots();
   }
 
   function replaceSpot(spot) { upsertSpot(spot); }
 
   function removeSpot(id) {
+    changesWhileLoading?.set(id, null);
     const before = state.spots.length;
     state.spots = state.spots.filter(s => s.id !== id);
     if (state.spots.length !== before) renderMarkers();
+    cacheCurrentSpots();
   }
 
   function updateCount() { els.spotCount.textContent = String(state.spots.length); }
@@ -1194,30 +1209,103 @@
     }
   }
 
-  async function loadSpots() {
-    if (!live) return setStatus("Demo mode");
-    try {
-      const result = await db.from("spots").select("*").order("created_at", { ascending:false }).limit(10000);
-      if (result.error) throw result.error;
-      state.spots = result.data || [];
-      renderMarkers();
-      setStatus("Live · shared worldwide", true);
+  function backupPhotoUrl(spot) {
+    return /^[0-9a-f-]{36}$/i.test(spot.id)
+      ? new URL(`data/photos/${spot.id}.jpg`, snapshotRoot).href : null;
+  }
 
-      state.realtimeChannel = db.channel("nett-hier-live-spots")
-        .on("postgres_changes", { event:"INSERT", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
-        .on("postgres_changes", { event:"UPDATE", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
-        .on("postgres_changes", { event:"DELETE", schema:"public", table:"spots" }, p => p.old?.id && removeSpot(p.old.id))
-        .subscribe();
-    } catch (err) {
-      console.error(err);
-      setStatus("Could not connect to shared map — check Supabase setup");
+  function cacheCurrentSpots() {
+    if (!sharedLoaded) return;
+    savedAt = new Date().toISOString();
+    try { writeCache(localStorage, config.supabaseUrl, state.spots, savedAt); } catch {}
+  }
+
+  function savedStatus() {
+    return savedAt
+      ? `Saved sightings · ${new Date(savedAt).toLocaleDateString()} · reconnecting…`
+      : "Sightings temporarily unavailable · reconnecting…";
+  }
+
+  function showSaved(snapshot, useBackupPhotos = false) {
+    if (sharedLoaded || (savedAt && Date.parse(savedAt) >= Date.parse(snapshot.syncedAt))) return;
+    savedAt = snapshot.syncedAt;
+    state.spots = snapshot.spots.map(spot => useBackupPhotos
+      ? { ...spot, image_url: backupPhotoUrl(spot) || spot.image_url } : spot);
+    renderMarkers();
+    setStatus(savedStatus());
+  }
+
+  async function loadSavedSpots() {
+    try {
+      const cached = readCache(localStorage, config.supabaseUrl);
+      if (cached) showSaved(cached);
+    } catch {}
+    // The GitHub copy is updated daily, independently of visits or Pages rebuilds.
+    for (const url of [new URL("data/sightings.json", snapshotRoot).href, "data/sightings.json"]) {
+      try {
+        const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(12000) });
+        if (!response.ok) throw new Error("Backup unavailable");
+        showSaved(validateSnapshot(await response.json(), config.supabaseUrl), true);
+        return;
+      } catch {}
     }
   }
 
-  addEventListener("pagehide", () => {
+  function scheduleRefresh(delay) {
+    clearTimeout(refreshTimer);
+    if (live && document.visibilityState !== "hidden") refreshTimer = setTimeout(loadSpots, delay);
+  }
+
+  function subscribeToSpots() {
+    if (state.realtimeChannel) return;
+    state.realtimeChannel = db.channel("nett-hier-live-spots")
+      .on("postgres_changes", { event:"INSERT", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
+      .on("postgres_changes", { event:"UPDATE", schema:"public", table:"spots" }, p => p.new && upsertSpot(p.new))
+      .on("postgres_changes", { event:"DELETE", schema:"public", table:"spots" }, p => p.old?.id && removeSpot(p.old.id))
+      .subscribe(status => { if (status === "SUBSCRIBED") loadSpots(); });
+  }
+
+  function loadSpots() {
+    if (!live) { setStatus(savedStatus()); return Promise.resolve(); }
+    if (loadingSpots) return loadingSpots;
+    clearTimeout(refreshTimer);
+    changesWhileLoading = new Map();
+    loadingSpots = (async () => {
+      try {
+        const spots = await readAllSpots((start, end) => db.from("spots").select("*")
+          .order("created_at", { ascending: false }).order("id", { ascending: true })
+          .range(start, end).abortSignal(AbortSignal.timeout(20000)));
+        const complete = new Map(spots.map(spot => [spot.id, spot]));
+        changesWhileLoading.forEach((spot, id) => spot ? complete.set(id, spot) : complete.delete(id));
+        state.spots = [...complete.values()];
+        sharedLoaded = true;
+        cacheCurrentSpots();
+        renderMarkers();
+        setStatus("Live · shared worldwide", true);
+        subscribeToSpots();
+        scheduleRefresh(5 * 60 * 1000);
+      } catch (err) {
+        console.warn("Shared sightings unavailable", err);
+        setStatus(savedStatus());
+        scheduleRefresh(30000);
+      } finally { changesWhileLoading = null; }
+    })().finally(() => { loadingSpots = null; });
+    return loadingSpots;
+  }
+
+  addEventListener("online", loadSpots);
+  addEventListener("focus", loadSpots);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") loadSpots();
+    else clearTimeout(refreshTimer);
+  });
+  addEventListener("pageshow", event => { if (event.persisted) loadSpots(); });
+  addEventListener("pagehide", event => {
+    clearTimeout(refreshTimer);
     if (db && state.realtimeChannel) db.removeChannel(state.realtimeChannel);
-    state.authSubscription?.unsubscribe?.();
+    state.realtimeChannel = null;
+    if (!event.persisted) state.authSubscription?.unsubscribe?.();
   });
 
-  Promise.all([initAuth(), loadSpots()]);
+  Promise.all([initAuth(), loadSavedSpots(), loadSpots()]);
 })();
